@@ -24,7 +24,7 @@ import Control.Alt ((<|>))
 import Data.Array (concatMap, filter, findLastIndex, intercalate, singleton, (:))
 import Data.Array as Array
 import Data.Either (either, Either(..))
-import Data.Foldable (all, any, notElem, elem)
+import Data.Foldable (all, any, elem, notElem)
 import Data.Maybe (Maybe(..), maybe, fromMaybe)
 import Data.Newtype (class Newtype)
 import Data.String (Pattern(Pattern), split)
@@ -35,7 +35,7 @@ import Data.String.Utils (lines)
 import Data.Tuple (Tuple(..))
 import Data.UUID (genUUID)
 import Effect (Effect)
-import Effect.Aff (Aff, attempt)
+import Effect.Aff (Aff, apathize, attempt, bracket)
 import Effect.Class (liftEffect)
 import Foreign.Object as Object
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
@@ -112,12 +112,18 @@ mkImplicit :: String -> Module
 mkImplicit m = Module { qualifier: Nothing, importType: Implicit, moduleName: m }
 
 getUnqualActiveModules :: State -> Maybe String -> Array String
-getUnqualActiveModules state@{modules, main} ident = getModules include state
+getUnqualActiveModules state maybeIdentifier = getModules include state
   where
-  include (Module { qualifier: Just _ }) = false
-  include (Module { importType: Explicit idents }) = maybe false (\x -> x `elem` idents || ("(" <> x <> ")") `elem` idents) ident
-  include (Module { importType: Implicit }) = true
-  include (Module { importType: Hiding idents }) =  maybe true (_ `notElem` idents) ident
+  include (Module m) = case m of
+    { qualifier: Just _ } -> false
+    { importType: Implicit } -> true
+    { importType: Hiding identifiers } -> 
+      maybeIdentifier # all (_ `notElem` identifiers)
+    { importType: Explicit identifiers } -> 
+      maybeIdentifier # any \identifier -> 
+        identifiers #
+          elem identifier || 
+          elem ("(" <> identifier <> ")")
 
 getAllActiveModules :: State -> Array String
 getAllActiveModules = getModules (const true)
@@ -164,20 +170,24 @@ makeTempFile fileName text = do
   FS.writeTextFile UTF8 tmpFile text
   pure tmpFile
 
-withTempFile :: String -> String -> (String -> Aff (Either String C.ImportResult))
+withTempFile :: 
+  String -> String -> (String -> Aff (Either String C.ImportResult))
   -> Aff ImportResult
-withTempFile fileName text action = do
-  tmpFile <- makeTempFile fileName text
-  res <- action tmpFile
-  answer <- case res of
-    Right (C.SuccessFile _) -> UpdatedImports <$> FS.readTextFile UTF8 tmpFile
-    Right (C.MultipleResults a) -> pure $ AmbiguousImport a
-    Right (C.SuccessText st) -> pure (FailedImport (intercalate "\n" st))
-    Left err -> pure (FailedImport err)
-  _ <- attempt $ FS.unlink tmpFile
-  pure answer
+withTempFile fileName text action = bracket acquire cleanup run
+  where
+  acquire = makeTempFile fileName text
+  run tmpFile = do
+    res <- action tmpFile
+    case res of
+      Right (C.SuccessFile _) -> UpdatedImports <$> FS.readTextFile UTF8 tmpFile
+      Right (C.MultipleResults a) -> pure $ AmbiguousImport a
+      Right (C.SuccessText st) -> pure (FailedImport (intercalate "\n" st))
+      Left err -> pure (FailedImport err)
+  cleanup = apathize <<< FS.unlink
 
-addModuleImport :: State -> Int -> String -> String -> String -> Aff { state :: State, result :: ImportResult }
+addModuleImport :: 
+  State -> Int -> String -> String -> String 
+  -> Aff { state :: State, result :: ImportResult }
 addModuleImport state port fileName text moduleName =
   case shouldAdd of
     false -> pure { state, result: UnnecessaryImport }
@@ -243,10 +253,11 @@ organiseModuleImports log state port fileName text = do
   res <- withTempFile fileName text addBogusImport
   case res of
     UpdatedImports result -> do
-
-      let result' = intercalate "\n" $ 
-                      Array.filter (not <<<  String.contains (Pattern qualifier)) $
-                      lines result
+      let 
+        result' = 
+          intercalate "\n" 
+            $ Array.filter (not <<<  String.contains (Pattern qualifier)) 
+            $ lines result
       liftEffect $ log Info (show $ lines result')
       pure $ Just { state, result: result' }
     _ ->pure Nothing

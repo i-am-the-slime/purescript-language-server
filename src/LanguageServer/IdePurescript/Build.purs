@@ -3,6 +3,7 @@ module LanguageServer.IdePurescript.Build where
 import Prelude
 
 import Data.Array (filter, mapMaybe, notElem, uncons)
+import Data.Array as Array
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Nullable (toNullable)
@@ -14,7 +15,7 @@ import Effect.Class (liftEffect)
 import Foreign (Foreign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import IdePurescript.Build (Command(Command), build, rebuild)
+import IdePurescript.Build (Command(Command), build, rebuild, rebuildWithTmpFile)
 import IdePurescript.PscErrors (PscResult(..))
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
 import LanguageServer.IdePurescript.Config (addNpmPath, buildCommand, censorCodes, codegenTargets)
@@ -31,10 +32,10 @@ positionToRange ({ startLine, startColumn, endLine, endColumn}) =
   Range { start: Position { line: startLine-1, character: startColumn-1 }
         , end:   Position { line: endLine-1, character: endColumn-1 } }
 
-type DiagnosticResult = { pscErrors :: Array RebuildError, diagnostics :: Object (Array Diagnostic) }
+type DiagnosticResult = { pscErrors :: Array RebuildError, hasErrors :: Boolean, diagnostics :: Object (Array Diagnostic) }
 
 emptyDiagnostics :: DiagnosticResult
-emptyDiagnostics = { pscErrors: [], diagnostics: Object.empty }
+emptyDiagnostics = { pscErrors: [], hasErrors: false, diagnostics: Object.empty }
 
 collectByFirst :: forall a. Array (Tuple (Maybe String) a) -> Object (Array a)
 collectByFirst x = Object.fromFoldableWith (<>) $ mapMaybe f x
@@ -47,6 +48,7 @@ convertDiagnostics projectRoot settings (PscResult { warnings, errors }) =
     diagnostics <#>
       { diagnostics: _
       , pscErrors: errors <> warnings'
+      , hasErrors: not (Array.null errors)
       }
   where
   diagnostics :: Effect (Object (Array Diagnostic))
@@ -86,6 +88,16 @@ getDiagnostics uri settings state = do
       liftEffect $ convertDiagnostics root settings errors
     _ -> pure emptyDiagnostics
 
+getDiagnosticsForTmpFile :: String -> DocumentUri -> Settings -> ServerState -> Aff DiagnosticResult
+getDiagnosticsForTmpFile tmpFilename uri settings state = do 
+  filename <- liftEffect $ uriToFilename uri
+  let targets = codegenTargets settings
+  case state of
+    ServerState { port: Just port, root: Just root } -> do
+      { errors, success } <- rebuildWithTmpFile port tmpFilename filename targets
+      liftEffect $ convertDiagnostics root settings errors
+    _ -> pure emptyDiagnostics
+
 censorWarnings :: Settings -> Array RebuildError -> Array RebuildError
 censorWarnings settings = filter (flip notElem codes <<< getCode)
   where
@@ -112,5 +124,5 @@ fullBuild logCb _ settings state _ = do
           liftEffect $ Right <$> convertDiagnostics directory settings errors
     _, Nothing ->
       pure $ Left "Error parsing build command"
-    ServerState { port, conn, root }, _ -> do
+    ServerState { port, root }, _ -> do
       pure $ Left $ "Error running build: port=" <> show port <> ", root=" <> show root

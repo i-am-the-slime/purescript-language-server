@@ -1,4 +1,5 @@
-import { TextDocument, Position, Range } from 'vscode-languageserver';
+import { TextDocument, Position, Range } from 'vscode-languageserver-textdocument';
+import { DocumentUri } from 'vscode-languageserver-types';
 
 export const getText = (document: TextDocument) => () => document.getText();
 
@@ -16,3 +17,4 @@ export const offsetAtPosition = (document: TextDocument) => (pos: Position) => (
 
 export const positionAtOffset = (document: TextDocument) => (offset: number) => () => document.positionAt(offset);
 
+export const createTextDocument = (uri: DocumentUri) => (languageId: string) => (version: number) => (content: string) => () => TextDocument.create(uri, languageId, version, content)

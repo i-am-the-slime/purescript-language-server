@@ -92,8 +92,12 @@ build logCb buildOptions@{ command: Command cmd args, directory, useNpmDir } = d
     pure mempty
 
 rebuild :: Int -> String -> Maybe (Array CodegenTarget) -> Aff BuildResult
-rebuild port file targets = do
-  res <- P.rebuild port file (Just file) targets
+rebuild port file = rebuildWithTmpFile port file file
+
+-- Same as rebuild but allows for specifying a different "actualFile"
+rebuildWithTmpFile :: Int -> String -> String -> Maybe (Array CodegenTarget) -> Aff BuildResult
+rebuildWithTmpFile port file actualFile targets = do
+  res <- P.rebuild port file (Just actualFile) targets
   either
     (throwError <<< error)
     (pure <<< onResult)

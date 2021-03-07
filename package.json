@@ -16,31 +16,30 @@
   "homepage": "https://github.com/nwolverson/purescript-language-server",
   "license": "MIT",
   "main": "./server.js",
-  "bin": "./cli.js",
   "scripts": {
-    "prepare": "run-s install:* build",
+    "prepare": "npm run install:spago",
     "install:spago": "spago install",
-    "build": "run-s build:*",
+    "build": "npm run build:tsc && npm run build:server",
     "build:tsc": "tsc -p src/LanguageServer/",
-    "build:server": "spago bundle-app  -t server.js -m LanguageServer.IdePurescript.Main"
+    "build:server": "spago bundle-app -t server.js -m LanguageServer.IdePurescript.Main"
   },
   "files": [
-    "cli.js",
     "server.js"
   ],
   "dependencies": {
     "shell-quote": "^1.7.2",
     "uuid": "^3.3.2",
-    "vscode-languageserver": "^6.1.1",
+    "vscode-languageserver": "^7.0.0",
+    "vscode-languageserver-protocol": "^3.16.0",
     "vscode-languageserver-textdocument": "^1.0.1",
     "vscode-uri": "^2.1.1",
     "which": "^2.0.2"
   },
   "devDependencies": {
-    "@types/node": "7.0.32",
-    "npm-run-all": "^4.1.5",
-    "purescript": "^0.13.8",
-    "spago": "^0.17.0",
-    "typescript": "^3.9.5"
+    "@types/node": "^14.14.31",
+    "purescript": "^0.14.1",
+    "spago": "^0.20.0",
+    "typescript": "^4.2.3",
+    "vscode-languageserver-types": "^3.16.0"
   }
 }

@@ -51,7 +51,7 @@ getTooltips :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionP
 getTooltips docs settings state ({ textDocument, position }) = do
   doc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
   text <- liftEffect $ getTextAtRange doc $ lineRange position
-  let { port, modules, conn } = un ServerState state
+  let { port, modules, connection } = un ServerState state
       char = _.character $ un Position $ position
   case port, identifierAtPoint text char, moduleAtPoint text char of
     Just port', _, Just { word, range } -> do

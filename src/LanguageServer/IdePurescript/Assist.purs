@@ -41,9 +41,9 @@ lineRange pos@(Position { line, character }) = Range
 
 caseSplit :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 caseSplit docs settings state args = do
-  let ServerState { port, conn, clientCapabilities } = state
-  case port, conn, args of
-    Just port', Just conn', [ argUri, argLine, argChar, argType ]
+  let ServerState { port, connection, clientCapabilities } = state
+  case port, connection, args of
+    Just port', Just connection', [ argUri, argLine, argChar, argType ]
         | Right uri <- runExcept $ readString argUri
         , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
         , Right char <- runExcept $ readInt argChar
@@ -56,21 +56,21 @@ caseSplit docs settings state args = do
                 Just { range: { left, right } } -> do
                     lines <- eitherToErr $ P.caseSplit port' lineText left right false tyStr
                     let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
-                    void $ applyEdit conn' edit
-                _ -> do liftEffect $ log conn' "fail identifier"
+                    void $ applyEdit connection' edit
+                _ -> do liftEffect $ log connection' "fail identifier"
                         pure unit
             pure unit
     _, Just conn', [ argUri, argLine, argChar, argType ] ->
         liftEffect $ log conn' $ show [ show $ runExcept $ readString argUri, show $ runExcept $ readInt argLine , show $ runExcept $ readInt argChar, show $ runExcept $ readString argType ]
     _, _, _ -> do 
-        liftEffect $ maybe (pure unit) (flip log "fail match") conn
+        liftEffect $ maybe (pure unit) (flip log "fail match") connection
         pure unit
 
 addClause :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 addClause docs settings state args = do
-  let ServerState { port, conn, clientCapabilities } = state
-  case port, conn, args of
-    Just port', Just conn', [ argUri, argLine, argChar ]
+  let ServerState { port, connection, clientCapabilities } = state
+  case port, connection, args of
+    Just port', Just connection', [ argUri, argLine, argChar ]
         | Right uri <- runExcept $ readString argUri
         , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
         , Right char <- runExcept $ readInt argChar
@@ -83,7 +83,7 @@ addClause docs settings state args = do
                 Just { range: { left, right } } -> do
                     lines <- eitherToErr $ P.addClause port' lineText false
                     let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
-                    void $ applyEdit conn' edit
+                    void $ applyEdit connection' edit
                 _ -> pure unit
             pure unit
     _, _, _ -> pure unit
@@ -107,9 +107,9 @@ decodeTypoResult obj = do
   pure $ TypoResult { identifier, mod , declarationType }
 
 fixTypoActions :: DocumentStore -> Settings -> ServerState -> DocumentUri -> Int -> Int -> Aff (Array Command)
-fixTypoActions docs settings state@(ServerState { port, conn, modules, clientCapabilities }) docUri line char =
-  case port, conn of
-    Just port', Just conn' -> do
+fixTypoActions docs settings state@(ServerState { port, connection, modules, clientCapabilities }) docUri line char =
+  case port, connection of
+    Just port', Just connection' -> do
       doc <- liftEffect $ getDocument docs docUri
       lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
       version <- liftEffect $ getVersion doc
@@ -151,8 +151,8 @@ fixTypoActions docs settings state@(ServerState { port, conn, modules, clientCap
           " value: "
 
 fixTypo :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-fixTypo log docs settings state@(ServerState { port, conn, modules, clientCapabilities }) args = do
-  unsafeToForeign <$> case port, conn, args !! 0, args !! 1, args !! 2 of
+fixTypo log docs settings state@(ServerState { port, connection, modules, clientCapabilities }) args = do
+  unsafeToForeign <$> case port, connection, args !! 0, args !! 1, args !! 2 of
     Just port', Just conn', Just argUri, Just argLine, Just argChar
       | Right uri <- runExcept $ readString argUri
       , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
@@ -178,8 +178,8 @@ fixTypo log docs settings state@(ServerState { port, conn, modules, clientCapabi
 
 fillTypedHole :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 fillTypedHole logFn docs settings state args = do
-  let ServerState { port, conn, clientCapabilities } = state
-  case port, conn, args of
+  let ServerState { port, connection, clientCapabilities } = state
+  case port, connection, args of
     Just port', Just conn', [ _, argUri, range', argChoice ]
       | Right range <- runExcept $ readRange range'
       , Right uri <- runExcept $ readString argUri
@@ -200,7 +200,7 @@ fillTypedHole logFn docs settings state args = do
       _ <- addCompletionImport logFn docs settings state [ unsafeToForeign identifier, unsafeToForeign mod, unsafeToForeign Nothing, unsafeToForeign uri ]
       pure unit
     _, _, _ -> do 
-      liftEffect $ maybe (pure unit) (flip log "fail match") conn
+      liftEffect $ maybe (pure unit) (flip log "fail match") connection
       pure unit
   where
     readTypeInfo :: Foreign -> TypeInfo

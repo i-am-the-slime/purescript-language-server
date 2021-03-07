@@ -10,13 +10,13 @@ import Effect.Class (liftEffect)
 import Foreign.Object as Object
 import Node.Path as Path
 import Node.Process (getEnv, lookupEnv)
-import PscIde.Server (findBins', Executable)
+import PscIde.Server (findBinaries', Executable)
 
 
 findBins :: forall a. Either a String -> String -> Aff (Array Executable)
 findBins pathVar server = do
   env <- liftEffect getEnv
-  findBins'
+  findBinaries'
     { pathExt: Nothing
     , path: either (const Nothing) Just pathVar
     , env: either (const Nothing) (Just <<< flip (Object.insert "PATH") env) pathVar

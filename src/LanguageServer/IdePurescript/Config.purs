@@ -4,12 +4,14 @@ import Prelude
 
 import Control.Monad.Except (runExcept)
 import Data.Either (either)
+import Data.Int as Int
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Time.Duration (Milliseconds(..))
+import Data.Traversable (traverse)
 import Foreign (F, Foreign, readArray, readBoolean, readInt, readString)
 import Foreign.Index ((!))
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Traversable (traverse)
-import PscIde.Server (LogLevel(..))
 import PscIde.Command (CodegenTarget(..))
+import PscIde.Server (LogLevel(..))
 
 getConfigMaybe :: forall a. (Foreign -> F a) -> String -> Foreign -> Maybe a
 getConfigMaybe readValue key settings = do
@@ -82,6 +84,12 @@ preludeModule = getString "preludeModule" "Prelude"
 
 fastRebuild :: ConfigFn Boolean
 fastRebuild = getBoolean "fastRebuild" true
+
+liveRebuild :: ConfigFn Boolean
+liveRebuild = getBoolean "liveRebuild" false
+
+rebuildFrequency :: ConfigFn Milliseconds
+rebuildFrequency = Milliseconds <<< Int.toNumber <<< getInt "liveRebuildFrequency" 250
 
 editorMode :: ConfigFn Boolean
 editorMode = getBoolean "editorMode" false

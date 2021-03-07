@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, Fiber, Milliseconds)
 import Foreign (Foreign)
 import Foreign.Object (Object)
 import IdePurescript.Modules (State)
@@ -16,7 +16,10 @@ newtype ServerState = ServerState
   { port :: Maybe Int
   , deactivate :: Aff Unit
   , root :: Maybe String
-  , conn :: Maybe Connection
+  , connection :: Maybe Connection
+  , runningRebuild :: Maybe (Fiber Unit)
+  , buildQueue :: Object TextDocument
+  , successfulBuildTimes :: Object (Array Milliseconds)
   , modules :: State
   , modulesFile :: Maybe DocumentUri
   , buildQueue :: Object TextDocument

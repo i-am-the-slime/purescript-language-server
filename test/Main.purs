@@ -2,16 +2,26 @@ module Test.Main where
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Data.Array (concat)
+import Data.Array.NonEmpty as NonEmptyArray
+import Data.Either (Either(..))
+import Data.List (List(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Nullable (toMaybe, toNullable, null)
+import Data.Tree (mkTree)
+import Data.Tree.Zipper as Zipper
 import Effect (Effect)
+import Effect.Class (liftEffect)
 import IdePurescript.Tokens (identifierAtPoint)
+import LanguageServer.IdePurescript.SignatureHelp (findArgumentIndex, parseSignature)
 import LanguageServer.Text (makeMinimalWorkspaceEdit)
-import LanguageServer.Types (DocumentUri(..), Position(..), Range(..), TextDocumentEdit(..), TextEdit(..), WorkspaceEdit(..), ClientCapabilities)
-import Test.Unit (suite, test)
+import LanguageServer.TextDocument (TextDocument, createTextDocument)
+import LanguageServer.Types (ClientCapabilities, DocumentUri(..), LanguageId(..), Position(..), Range(..), TextDocumentEdit(..), TextEdit(..), WorkspaceEdit(..))
+import Test.Unit (TestSuite, suite, suiteOnly, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
+import Unsafe.Coerce (unsafeCoerce)
 
 getEdit :: WorkspaceEdit -> Array TextEdit
 getEdit (WorkspaceEdit {documentChanges}) = concat $ map go $ changes
@@ -44,6 +54,7 @@ makeEdit = makeMinimalWorkspaceEdit (Just capabilities) (DocumentUri "uri") 1.0
 
 main :: Effect Unit
 main = runTest do
+  signatureHelpSuite
   suite "workspace edit" do
     test "update line" do
       let edit = makeEdit "A\nB\nC\n" "A\nXX\nC\n"
@@ -88,3 +99,145 @@ main = runTest do
       let result = identifierAtPoint str 3
       Assert.equal (result <#> _.word) (Just """/\""")
       Assert.equal (result <#> _.range) (Just { left: 3, right: 5 })
+
+dunno :: forall a. a
+dunno = unsafeCoerce "dunno"
+
+mkState :: forall a. a -> Zipper.Loc a
+mkState x = Zipper.fromTree $ mkTree x Nil
+
+signatureHelpSuite :: TestSuite
+signatureHelpSuite = do
+  suite "Signature help" do
+    suiteOnly "Parses values" do
+      test "gets correct position after entering a space" do 
+        let testString = "log "
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 7}
+        let state = mkState 
+                    { functionName: "log"
+                    , maxPosition: Position { line: 6, character: 6 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 0
+        Assert.equal expected actual 
+
+      test "gets correct position after entering a quote" do 
+        let testString = "log \""
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 8}
+        let state = mkState
+                    { functionName: "log"
+                    , maxPosition: Position { line: 6, character: 8 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 0
+        Assert.equal expected actual 
+
+      test "gets correct position after entering ' ('" do 
+        let testString = "log ("
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 8}
+        let state = mkState 
+                    { functionName: "log"
+                    , maxPosition: Position { line: 6, character: 7 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 0
+        Assert.equal expected actual 
+
+      test "gets correct position after entering '7 '" do 
+        let testString = "add 7 "
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 9}
+        let state = mkState 
+                    { functionName: "add"
+                    , maxPosition: Position { line: 6, character: 8 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 1
+        Assert.equal expected actual 
+
+      test "gets correct position after entering ' ()'" do 
+        let testString = "log ()"
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 9 }
+        let state = mkState 
+                    { functionName: "log"
+                    , maxPosition: Position { line: 6, character: 8 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 0
+        Assert.equal expected actual 
+
+      test "gets correct position after entering a newline" do 
+        let testString = "log\n"
+        textDocument <- mkTestDoc (exampleDoc <> testString) # liftEffect
+        let position = Position { line: 6, character: 7 }
+        let state = mkState 
+                    { functionName: "log"
+                    , maxPosition: Position { line: 6, character: 6 }
+                    , startPosition: Position { line: 6, character: 3 }
+                    , parameters: NonEmptyArray.singleton "String"
+                    , previousResponse: dunno
+                    }
+        actual <- runExceptT (findArgumentIndex position state testString)
+        let expected = Right 0
+        Assert.equal expected actual 
+
+    suite "Parses types" do
+      test "monomorphic unary function" do 
+        let actual = parseSignature "easy :: String -> Int" <#> _.parameters
+        let expected = Just (pure "String")
+        Assert.equal expected actual 
+      test "monomorphic unary function that takes a Maybe" do 
+        let actual = parseSignature "easy :: Maybe String -> Int" <#> _.parameters
+        let expected = Just (pure "Maybe String")
+        Assert.equal expected actual 
+      test "function that takes a callback" do 
+        let actual = parseSignature "easy :: (String -> Number) -> Int" <#> _.parameters
+        let expected = NonEmptyArray.fromArray ["(String -> Number)"]
+        Assert.equal expected actual 
+      test "monomorphic binary function" do 
+        let actual = parseSignature "easy :: String -> Int -> Int" <#> _.parameters
+        let expected = NonEmptyArray.fromArray ["String", "Int"]
+        Assert.equal expected actual 
+      test "monomorphic record function" do 
+        let actual = parseSignature "easy :: { name :: String } -> Int" <#> _.parameters
+        let expected = NonEmptyArray.fromArray ["{ name :: String }"]
+        Assert.equal expected actual 
+      test "nested record function" do 
+        let actual = parseSignature "easy :: { name :: { fore :: String, after :: String } } -> Int" <#> _.parameters
+        let expected = NonEmptyArray.fromArray ["{ name :: { fore :: String, after :: String } }"]
+        Assert.equal expected actual 
+      test "parse type of log" do 
+        let actual = parseSignature "log :: ∀ m. MonadEffect m ⇒ String → m Unit" <#> _.parameters
+        let expected = NonEmptyArray.fromArray ["String"]
+        Assert.equal expected actual 
+
+
+mkTestDoc :: String -> Effect TextDocument
+mkTestDoc = createTextDocument (DocumentUri "/TestExample.purs") (LanguageId "purescript") 1 
+
+exampleDoc :: String
+exampleDoc = """module TestExample where
+import Prelude
+import Data.Effect (Effect)
+
+main :: Effect Unit
+main = """

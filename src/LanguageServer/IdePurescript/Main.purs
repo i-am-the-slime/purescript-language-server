@@ -1,7 +1,6 @@
 module LanguageServer.IdePurescript.Main (main) where
 
 import Prelude
-
 import Control.Monad.Except (runExcept)
 import Control.Promise (Promise)
 import Control.Promise as Promise
@@ -74,8 +73,8 @@ defaultServerState = ServerState
   }
 
 type CmdLineArguments =
-  { config :: Maybe String
-  , filename :: Maybe String
+  { config ∷ Maybe Foreign
+  , filename ∷ Maybe String
   }
 
 -- | Parses command line arguments  passed to process.argv

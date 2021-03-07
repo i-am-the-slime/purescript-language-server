@@ -31,9 +31,9 @@ addCompletionImport :: Notify -> DocumentStore -> Settings -> ServerState -> Arr
 addCompletionImport = addCompletionImport' mempty
 
 addCompletionImport' :: WorkspaceEdit -> Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-addCompletionImport' existingEdit log docs config state@(ServerState { port, modules, conn }) args = do
+addCompletionImport' existingEdit log docs config state@(ServerState { port, modules, connection }) args = do
   let shouldAddImport = autocompleteAddImport config
-  case conn, (runExcept <<< readString) <$> args, shouldAddImport of
+  case connection, (runExcept <<< readString) <$> args, shouldAddImport of
     Just conn', [ Right identifier, mod, qual, Right uriRaw, Right ns ], true -> do
       let uri = DocumentUri uriRaw
       doc <- liftEffect $ getDocument docs uri
@@ -47,8 +47,8 @@ addCompletionImport' existingEdit log docs config state@(ServerState { port, mod
         Left res -> do
           void $ applyEdit conn' existingEdit
           pure res
-    Just conn', _, _ ->  do
-      void $ applyEdit conn' existingEdit
+    Just connection', _, _ ->  do
+      void $ applyEdit connection' existingEdit
       pure $ unsafeToForeign $ toNullable Nothing
     _, _, _ -> pure $ unsafeToForeign $ toNullable Nothing
 
@@ -75,7 +75,7 @@ showNS C.NSType = "NSType"
 addCompletionImportEdit :: Notify -> DocumentStore -> Settings -> ServerState
  -> CompletionImportArgs -> TextDocument -> Number -> String -> Maybe C.Namespace
  -> Aff (Either Foreign (Array WorkspaceEdit))
-addCompletionImportEdit log docs config state@(ServerState { port, modules, conn, clientCapabilities }) { identifier, mod, qual, uri } doc version text ns = do
+addCompletionImportEdit log docs config state@(ServerState { port, modules, connection, clientCapabilities }) { identifier, mod, qual, uri } doc version text ns = do
   let prelude = preludeModule config
   case port of
     Just port' -> do
@@ -93,7 +93,7 @@ addCompletionImportEdit log docs config state@(ServerState { port, modules, conn
           let edit = makeMinimalWorkspaceEdit clientCapabilities uri version text newText
           pure $ Right $ maybe [] singleton edit
         AmbiguousImport imps -> liftEffect do
-          liftEffect $ for_ conn (_ `Window.showError`
+          liftEffect $ for_ connection (_ `Window.showError`
             ("Could not import " <> text <> " because there is more than one option"))
           log Warning "Found ambiguous imports"
           pure $ Left $ unsafeToForeign $ (\(C.TypeInfo { module' }) -> module') <$> imps
@@ -104,7 +104,7 @@ addCompletionImportEdit log docs config state@(ServerState { port, modules, conn
           pure $ Right []
         -- Failed imports are now rare and will display an error
         FailedImport msg -> do 
-          liftEffect $ for_ conn (_ `Window.showError` ("Failed to import: `" <> identifier <> "`. Error: " <> msg))
+          liftEffect $ for_ connection (_ `Window.showError` ("Failed to import: `" <> identifier <> "`. Error: " <> msg))
           pure $ Right []
     _ -> pure $ Right [] 
 
@@ -121,36 +121,22 @@ addCompletionImportEdit log docs config state@(ServerState { port, modules, conn
 
 addModuleImport' :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
 addModuleImport' log docs config state args = do
-  let ServerState { port, modules, conn, clientCapabilities } = state
+  let ServerState { port, modules, connection, clientCapabilities } = state
   case port, (runExcept <<< readString) <$> args of
     Just port', [ Right mod', qual', Right uri ] -> do
       doc <- liftEffect $ getDocument docs (DocumentUri uri)
       version <- liftEffect $ getVersion doc
       text <- liftEffect $ getText doc
       fileName <- liftEffect $ uriToFilename $ DocumentUri uri
-      edit <- case qual' of
-        Right _ ->
-          addCompletionImportEdit log docs config state 
-            { identifier: ""
-            , qual: hush qual'
-            , mod: Just mod'
-            , uri: DocumentUri uri
-            }
-            doc 
-            version 
-            text 
-            Nothing
-        Left _ -> do
-          { result: res } <- addModuleImport modules port' fileName text mod'
-          case res of
-            UpdatedImports result  -> do
-              pure $ Right $ fromFoldable $ makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
-            _ -> pure $ Right []
-
-      case conn, edit of
-        Just conn', Right edits -> do
-          void $ applyEdit conn' (fold edits)
-        _, _ -> pure unit
+      { result: res } <- addModuleImport modules port' fileName text mod'
+      case res of
+        UpdatedImports result  -> do
+          let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
+          case connection, edit of
+            Just connection', Just edit' -> void $ applyEdit connection' edit'
+            _, _ -> pure unit
+        _ -> 
+          pure unit
       pure successResult
 
     _, args'-> do
@@ -163,7 +149,7 @@ addModuleImport' log docs config state args = do
 getAllModules :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
 getAllModules log docs config state args =
   case state of
-    ServerState { port: Just port, modules, conn } ->
+    ServerState { port: Just port, modules, connection } ->
       unsafeToForeign <$> getAvailableModules port
     _ -> do
       liftEffect $ log Error "Fail case"
@@ -171,7 +157,7 @@ getAllModules log docs config state args =
 
 organiseImports :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
 organiseImports log docs config state args = do
-  let ServerState { port, modules, conn, clientCapabilities } = state
+  let ServerState { port, modules, connection, clientCapabilities } = state
   case port, (runExcept <<< readString) <$> args of
     Just port', [ Right uri ] -> do
       doc <- liftEffect $ getDocument docs (DocumentUri uri)
@@ -182,8 +168,8 @@ organiseImports log docs config state args = do
       case res of
         Just { result } -> do
           let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
-          case conn, edit of
-            Just conn', Just edit' -> void $ applyEdit conn' edit'
+          case connection, edit of
+            Just connection', Just edit' -> void $ applyEdit connection' edit'
             _, _ -> pure unit
         _ -> pure unit
       pure successResult

@@ -3,7 +3,7 @@ module LanguageServer.TextDocument where
 import Prelude
 
 import Effect (Effect)
-import LanguageServer.Types (DocumentUri, Position, Range)
+import LanguageServer.Types (DocumentUri, LanguageId, Position, Range)
 
 foreign import data TextDocument :: Type
 
@@ -25,3 +25,5 @@ foreign import getVersion :: TextDocument -> Effect Number
 foreign import getLineCount :: TextDocument -> Effect Int
 
 foreign import getTextAtRange :: TextDocument -> Range -> Effect String
+
+foreign import createTextDocument :: DocumentUri -> LanguageId -> Int -> String -> Effect TextDocument

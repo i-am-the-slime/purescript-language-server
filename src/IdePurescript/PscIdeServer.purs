@@ -10,19 +10,23 @@ module IdePurescript.PscIdeServer
 
 import Prelude
 
+import Control.Alt ((<|>))
 import Data.Array (length, head)
 import Data.Either (either)
-import Data.Int (fromNumber)
+import Data.Int as Int
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe, isNothing, maybe)
+import Data.Posix.Signal (Signal(..))
 import Data.String (Pattern(Pattern), split, toLower)
+import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (traverse, traverse_)
 import Effect (Effect)
-import Effect.Aff (Aff, attempt, try)
-import Effect.Class (liftEffect)
-import Global (readInt)
+import Effect.Aff (Aff, apathize, attempt)
+import Effect.Aff as Aff
+import Effect.Class (class MonadEffect, liftEffect)
 import IdePurescript.Exec (getPathVar, findBins)
 import IdePurescript.PscIde (cwd) as PscIde
 import Node.ChildProcess (ChildProcess, stderr, stdout)
+import Node.ChildProcess as CP
 import Node.Encoding (Encoding(..))
 import Node.Path (normalize)
 import Node.Platform (Platform(..))
@@ -48,15 +52,13 @@ instance showErrorLevel :: Show ErrorLevel where
   show Warning = "Warning"
   show Error = "Error"
 
-type Notify = ErrorLevel -> String -> Effect Unit
+type Notify = forall eff. MonadEffect eff => ErrorLevel -> String -> eff Unit
 
 data Version = Version Int Int Int
 
-
-
 parseVersion :: String -> Maybe Version
 parseVersion s =
-  case traverse fromNumber $ readInt 10 <$> split (Pattern ".") s of
+  case Int.fromString `traverse` split (Pattern ".") s of
     Just [a, b, c] -> Just $ Version a b c
     _ -> Nothing
 
@@ -89,7 +91,7 @@ startServer' ::
   -> Notify
   -> Notify
   -> Aff { quit :: Aff Unit, port :: Maybe Int }
-startServer' settings@({ exe: server, glob }) path addNpmBin cb logCb = do
+startServer' settings@({ exe: server }) path addNpmBin cb logCb = do
   pathVar <- liftEffect $ getPathVar addNpmBin path
   serverBins <- findBins pathVar server
   case head serverBins of
@@ -97,7 +99,7 @@ startServer' settings@({ exe: server, glob }) path addNpmBin cb logCb = do
       liftEffect $ cb Info $ "Couldn't find IDE server, check PATH. Looked for: "
         <> server <> " in PATH: " <> either identity identity pathVar
       pure { quit: pure unit, port: Nothing }
-    Just (Executable bin version) -> do
+    Just (Executable bin _) -> do
       liftEffect $ logCb Info $ "Resolved IDE server paths (npm-bin: " <> show addNpmBin <> ") from PATH of " <> either identity identity pathVar <> " (1st is used):"
       traverse_ (\(Executable x vv) ->
         liftEffect $ logCb Info $ x <> ": " <> fromMaybe "ERROR" vv) serverBins
@@ -182,6 +184,13 @@ startServer logCb { exe, combinedExe, glob, logLevel, editorMode, polling, outpu
 -- | Stop a psc-ide server. Currently implemented by asking it nicely, but potentially by killing it if that doesn't work...
 stopServer :: Int -> String -> ChildProcess -> Aff Unit
 stopServer port rootPath cp = do
-  oldPort <- liftEffect $ S.getSavedPort rootPath
-  _ <- try $ liftEffect $ when (oldPort == Just port) $ S.deleteSavedPort rootPath
-  S.stopServer port
+  apathize do 
+    oldPort <- S.getSavedPort rootPath # liftEffect
+    when (oldPort == Just port) do 
+      S.deleteSavedPort rootPath # liftEffect
+  Aff.sequential (stopNicely <|> killWithDelay)
+  where
+  stopNicely = Aff.parallel $ S.stopServer port
+  killWithDelay = Aff.parallel do
+    Aff.delay (200.0 # Milliseconds) 
+    liftEffect $ CP.kill SIGKILL cp

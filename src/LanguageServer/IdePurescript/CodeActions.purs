@@ -53,11 +53,11 @@ codeActionToCommand capabilities action = codeActionResult <$>
   convert _ = Nothing
 
 getActions :: DocumentStore -> Settings -> ServerState -> CodeActionParams -> Aff (Array CodeActionResult)
-getActions documents settings state@(ServerState { diagnostics, conn: Just conn, clientCapabilities }) { textDocument, range, context } =
+getActions documents settings state@(ServerState { diagnostics, connection: Just connection, clientCapabilities }) { textDocument, range, context } =
   case Object.lookup (un DocumentUri $ docUri) diagnostics of
     Just errs -> mapMaybe (codeActionToCommand clientCapabilities) <$> do
-      liftEffect$ log conn $ show clientCapabilities
-      liftEffect$ log conn $ "Literals supported: " <> show (codeActionLiteralsSupported <$> clientCapabilities)
+      liftEffect$ log connection $ show clientCapabilities
+      liftEffect$ log connection $ "Literals supported: " <> show (codeActionLiteralsSupported <$> clientCapabilities)
       
       codeActions <- traverse commandForCode errs
       pure $
@@ -150,8 +150,8 @@ toNextLine (Range { start, end: end@(Position { line, character }) }) =
     }
 
 onReplaceSuggestion :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-onReplaceSuggestion docs config (ServerState { conn, clientCapabilities }) args =
-  case conn, args of
+onReplaceSuggestion docs config (ServerState { connection, clientCapabilities }) args =
+  case connection, args of
     Just conn', [ uri', replacement', range' ]
       | Right uri <- runExcept $ readString uri'
       , Right replacement <- runExcept $ readString replacement'
@@ -181,8 +181,8 @@ getReplacementEdit doc { replacement, range } = do
   pure $ TextEdit { range: range', newText }
 
 onReplaceAllSuggestions :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-onReplaceAllSuggestions docs config (ServerState { conn, clientCapabilities }) args =
-  case conn, args of
+onReplaceAllSuggestions docs config (ServerState { connection, clientCapabilities }) args =
+  case connection, args of
     Just conn', [ uri', suggestions' ]
       | Right uri <- runExcept $ readString uri'
       , Right suggestions <- runExcept $ readArray suggestions' >>= traverse readSuggestion

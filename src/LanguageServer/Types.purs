@@ -5,10 +5,14 @@ import Prelude
 import Data.Array (concat, groupBy, sortWith, (:))
 import Data.Array.NonEmpty (toNonEmpty)
 import Data.Either (Either, either)
+import Data.Lens (Lens')
+import Data.Lens.Iso.Newtype (_Newtype)
+import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.Newtype (class Newtype, over)
 import Data.NonEmpty (foldl1, (:|))
 import Data.Nullable (Nullable, toMaybe, toNullable)
+import Data.Symbol (SProxy(..))
 import Data.Tuple (Tuple(..))
 import Foreign (F, Foreign, readInt)
 import Foreign.Index ((!))
@@ -39,6 +43,12 @@ derive newtype instance eqDocumentUri :: Eq DocumentUri
 
 newtype Position = Position { line :: Int, character :: Int }
 
+character :: Lens' Position Int
+character = _Newtype <<< prop (SProxy :: _ "character")
+
+line :: Lens' Position Int
+line = _Newtype <<< prop (SProxy :: _ "line")
+
 instance eqPosition :: Eq Position where
   eq (Position { line, character }) (Position { line: line', character: character'}) = line == line' && character == character'
 
@@ -64,6 +74,12 @@ instance ordRange :: Ord Range where
 
 instance showRange :: Show Range where
   show (Range { start, end }) = "Range(" <> show start <> "," <> show end <> ")"
+
+endPosition :: Lens' Range Position
+endPosition = _Newtype <<< prop (SProxy :: _ "end")
+
+startPosition :: Lens' Range Position
+startPosition = _Newtype <<< prop (SProxy :: _ "start")
 
 derive instance newtypeRange :: Newtype Range _
 
@@ -309,6 +325,9 @@ newtype TextDocumentEdit = TextDocumentEdit { textDocument :: TextDocumentIdenti
 
 newtype TextDocumentIdentifier = TextDocumentIdentifier { uri :: DocumentUri, version :: Number }
 
+uri :: TextDocumentIdentifier -> DocumentUri
+uri (TextDocumentIdentifier tdi) = tdi.uri
+
 derive instance newtypeTextDocumentIdentifier :: Newtype TextDocumentIdentifier _
 derive instance eqTextDocumentIdentifier :: Eq TextDocumentIdentifier
 
@@ -371,3 +390,5 @@ codeActionSourceOrganizeImports = CodeActionKind "source.organizeImports"
 
 -- https://microsoft.github.io/language-server-protocol/specifications/specification-current/#workspaceEditClientCapabilities
 type WorkspaceEditClientCapabilities = { documentChanges :: Nullable Boolean }
+
+newtype LanguageId = LanguageId String
