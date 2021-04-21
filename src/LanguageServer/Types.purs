@@ -337,17 +337,19 @@ newtype FileChangeTypeCode = FileChangeTypeCode Int
 
 data FileChangeType = CreatedChangeType | ChangedChangeType | DeletedChangeType
 
+derive instance eqFileChangeType :: Eq FileChangeType
+
 fileChangeTypeToInt :: FileChangeType -> Int
 fileChangeTypeToInt = case _ of
   CreatedChangeType -> 1
   ChangedChangeType -> 2
   DeletedChangeType -> 3
 
-intToFileChangeType :: Int -> Maybe FileChangeType
-intToFileChangeType = case _ of
-  1 -> Just CreatedChangeType
-  2 -> Just ChangedChangeType
-  3 -> Just DeletedChangeType
+fromFileChangeTypeCode :: FileChangeTypeCode -> Maybe FileChangeType
+fromFileChangeTypeCode = case _ of
+  FileChangeTypeCode 1 -> Just CreatedChangeType
+  FileChangeTypeCode 2 -> Just ChangedChangeType
+  FileChangeTypeCode 3 -> Just DeletedChangeType
   _ -> Nothing
   
 newtype FileEvent = FileEvent { uri :: DocumentUri, type :: FileChangeTypeCode }

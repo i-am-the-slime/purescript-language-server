@@ -31,28 +31,31 @@ import LanguageServer.Types as LS
 getCompletions :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams -> Aff CompletionItemList
 getCompletions docs settings state ({ textDocument, position }) = do
     let uri = _.uri $ un TextDocumentIdentifier textDocument
-    doc <- liftEffect $ getDocument docs uri
-    line <- liftEffect $ getTextAtRange doc (mkRange position)
-    let autoCompleteAllModules = Config.autoCompleteAllModules settings
-        { port, modules } = unwrap state
-        getQualifiedModule = (flip getQualModule) modules
+    maybeDoc <- liftEffect $ getDocument docs uri
+    case maybeDoc of 
+      Nothing -> pure $ result []
+      Just doc -> do
+        line <- liftEffect $ getTextAtRange doc (mkRange position)
+        let autoCompleteAllModules = Config.autoCompleteAllModules settings
+            { port, modules } = unwrap state
+            getQualifiedModule = (flip getQualModule) modules
 
-    case port of
-        Just port' ->  do
-            usedModules <- if autoCompleteAllModules
-                then getLoadedModules port'
-                else pure $ getUnqualActiveModules modules Nothing
-            let qualifiers = mapMaybe (\(Modules.Module { qualifier }) -> qualifier) modules.modules
-            suggestions <- getSuggestions port'
-                { line
-                , moduleInfo: { modules: usedModules, getQualifiedModule, mainModule: modules.main, importedModules: getAllActiveModules modules }
-                , qualifiers
-                , maxResults: Config.autocompleteLimit settings
-                , groupCompletions: Config.autocompleteGrouped settings
-                , preferredModules: Config.importsPreferredModules settings
-                }
-            pure $ result $ convert uri <$> suggestions
-        _ -> pure $ result []
+        case port of
+            Just port' ->  do
+                usedModules <- if autoCompleteAllModules
+                    then getLoadedModules port'
+                    else pure $ getUnqualActiveModules modules Nothing
+                let qualifiers = mapMaybe (\(Modules.Module { qualifier }) -> qualifier) modules.modules
+                suggestions <- getSuggestions port'
+                    { line
+                    , moduleInfo: { modules: usedModules, getQualifiedModule, mainModule: modules.main, importedModules: getAllActiveModules modules }
+                    , qualifiers
+                    , maxResults: Config.autocompleteLimit settings
+                    , groupCompletions: Config.autocompleteGrouped settings
+                    , preferredModules: Config.importsPreferredModules settings
+                    }
+                pure $ result $ convert uri <$> suggestions
+            _ -> pure $ result []
 
     where
     result arr = CompletionItemList

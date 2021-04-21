@@ -5,9 +5,11 @@ import Prelude
 import Data.Array (uncons)
 import Data.Array.NonEmpty as NEA
 import Data.Either (either)
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Newtype (un)
 import Data.Nullable (Nullable, toNullable)
+import Data.Nullable as Nullable
 import Data.String (drop, length, take)
 import Data.String.Regex (match, regex)
 import Data.String.Regex.Flags (noFlags)
@@ -49,24 +51,27 @@ moduleAtPoint line column =
 
 getTooltips :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams -> Aff (Nullable Hover)
 getTooltips docs settings state ({ textDocument, position }) = do
-  doc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
-  text <- liftEffect $ getTextAtRange doc $ lineRange position
-  let { port, modules, connection } = un ServerState state
-      char = _.character $ un Position $ position
-  case port, identifierAtPoint text char, moduleAtPoint text char of
-    Just port', _, Just { word, range } -> do
-      let mod = getQualModule word (un ServerState state).modules
-      pure $ toNullable $ case uncons mod of 
-        Just { head } -> 
-          Just $ Hover {
-            contents: markupContent head
-          , range: toNullable $ Just $ wordRange position range
-          }
-        _ -> Nothing
-    Just port', Just { word, qualifier }, _ -> do
-      ty <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
-      pure $ toNullable $ map (convertInfo word) ty
-    _, _, _-> pure $ toNullable Nothing
+  maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
+  case maybeDoc of 
+    Nothing -> pure Nullable.null
+    Just doc -> do
+      text <- liftEffect $ getTextAtRange doc $ lineRange position
+      let { port, modules, connection } = un ServerState state
+          char = _.character $ un Position $ position
+      case port, identifierAtPoint text char, moduleAtPoint text char of
+        Just port', _, Just { word, range } -> do
+          let mod = getQualModule word (un ServerState state).modules
+          pure $ toNullable $ case uncons mod of 
+            Just { head } -> 
+              Just $ Hover {
+                contents: markupContent head
+              , range: toNullable $ Just $ wordRange position range
+              }
+            _ -> Nothing
+        Just port', Just { word, qualifier }, _ -> do
+          ty <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
+          pure $ toNullable $ map (convertInfo word) ty
+        _, _, _-> pure $ toNullable Nothing
 
   where
  

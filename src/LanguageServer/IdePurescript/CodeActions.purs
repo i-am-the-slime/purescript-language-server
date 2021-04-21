@@ -158,13 +158,16 @@ onReplaceSuggestion docs _ (ServerState { connection, clientCapabilities }) args
       , Right replacement <- runExcept $ readString replacement'
       , Right range <- runExcept $ readRange range'
       -> do
-        doc <- liftEffect $ getDocument docs (DocumentUri uri)
-        version <- liftEffect $ getVersion doc
-        TextEdit { range: range'', newText } <- getReplacementEdit doc { replacement, range }
-        let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version range'' newText
+        maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+        case maybeDoc of
+          Nothing -> mempty
+          Just doc -> do
+            version <- liftEffect $ getVersion doc
+            TextEdit { range: range'', newText } <- getReplacementEdit doc { replacement, range }
+            let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version range'' newText
 
-        -- TODO: Check original & expected text ?
-        void $ applyEdit conn' edit
+            -- TODO: Check original & expected text ?
+            void $ applyEdit conn' edit
     _, _ -> pure unit
 
 
@@ -187,15 +190,18 @@ onReplaceAllSuggestions docs _ (ServerState state) args =
       | Right uri <- runExcept $ readString uri'
       , Right suggestions <- runExcept $ readArray suggestions' >>= traverse readSuggestion
       -> do
-          doc <- liftEffect $ getDocument docs (DocumentUri uri)
-          version <- liftEffect $ getVersion doc
-          edits <- traverse (getReplacementEdit doc) suggestions
-          void $ applyEdit connection $ workspaceEdit state.clientCapabilities
-            [ TextDocumentEdit
-              { textDocument: TextDocumentIdentifier { uri: DocumentUri uri, version }
-              , edits
-              }
-            ]
+          maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+          case maybeDoc of
+            Nothing -> mempty
+            Just doc -> do
+              version <- liftEffect $ getVersion doc
+              edits <- traverse (getReplacementEdit doc) suggestions
+              void $ applyEdit connection $ workspaceEdit state.clientCapabilities
+                [ TextDocumentEdit
+                  { textDocument: TextDocumentIdentifier { uri: DocumentUri uri, version }
+                  , edits
+                  }
+                ]
     Just connection, other -> liftEffect do
       LanguageServerConsole.log connection $ 
         "[onReplaceAllSuggestions]: " <> 

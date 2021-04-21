@@ -52,9 +52,10 @@ import LanguageServer.IdePurescript.Server as Server
 import LanguageServer.IdePurescript.Symbols (getDefinition, getDocumentSymbols, getWorkspaceSymbols)
 import LanguageServer.IdePurescript.Tooltips (getTooltips)
 import LanguageServer.IdePurescript.Types (ServerState(..), CommandHandler)
+import LanguageServer.IdePurescript.WatchedFiles (handleDidChangeWatchedFiles)
 import LanguageServer.Setup (InitParams(..), getConfiguration, initConnection, initDocumentStore)
 import LanguageServer.TextDocument (TextDocument, getText, getUri)
-import LanguageServer.Types (Connection, Diagnostic, DocumentStore, DocumentUri(..), FileChangeType(..), FileChangeTypeCode(..), FileEvent(..), Settings, TextDocumentIdentifier(..), intToFileChangeType)
+import LanguageServer.Types (Connection, Diagnostic, DocumentStore, DocumentUri(..), Settings, TextDocumentIdentifier(..))
 import LanguageServer.Uri (filenameToUri, uriToFilename)
 import LanguageServer.Window (showError, showWarningWithActions)
 import Node.Encoding as Encoding
@@ -128,14 +129,18 @@ updateModules stateRef documents uri = do
   case currentState of
     ServerState { port: Just port, modulesFile }
       | modulesFile /= Just uri -> do
-        text <- getDocument documents uri >>= getText # liftEffect
-        path <- uriToFilename uri # liftEffect
-        modules <- getModulesForFileTemp port path text
-        newState <-
-          modify
-            (over ServerState (_ { modules = modules, modulesFile = Just uri }))
-            stateRef
-        pure $ Just newState
+        maybeDoc <- getDocument documents uri # liftEffect
+        case maybeDoc of 
+          Nothing -> pure Nothing
+          Just doc -> do
+            text <- getText doc # liftEffect
+            path <- uriToFilename uri # liftEffect
+            modules <- getModulesForFileTemp port path text
+            newState <-
+              modify
+                (over ServerState (_ { modules = modules, modulesFile = Just uri }))
+                stateRef
+            pure $ Just newState
     _ -> pure Nothing
 
 mkRunHandler ∷
@@ -438,9 +443,9 @@ handleEvents ∷
   Connection ->
   Ref ServerState ->
   DocumentStore -> Notify -> Effect Unit
-handleEvents config connection stateRef documents notify = do
+handleEvents configRef connection stateRef documents notify = do
   let
-    runHandler = mkRunHandler config stateRef documents
+    runHandler = mkRunHandler configRef stateRef documents
     stopPscIdeServer = mkStopPscIdeServer stateRef notify
     launchAffLog = mkLaunchAffLog notify
   onCompletion connection
@@ -491,18 +496,8 @@ handleEvents config connection stateRef documents notify = do
         (getActions documents)
   onShutdown connection $ Promise.fromAff stopPscIdeServer
   onDidChangeWatchedFiles connection
-    $ \{ changes } -> do
-        for_ changes \(FileEvent { uri, "type": FileChangeTypeCode n }) -> do
-          case intToFileChangeType n of
-            Just CreatedChangeType ->
-              log connection $ "Created "
-                <> un DocumentUri uri
-                <> " - full build may be required"
-            Just DeletedChangeType ->
-              log connection $ "Deleted "
-                <> un DocumentUri uri
-                <> " - full build may be required"
-            _ -> pure unit
+    $ launchAff_ 
+    <<< handleDidChangeWatchedFiles configRef connection stateRef documents
   onDidChangeContent documents
     $ \_ -> do
         Ref.modify_ (over ServerState (_ { modulesFile = Nothing })) stateRef
@@ -512,7 +507,7 @@ handleEvents config connection stateRef documents notify = do
     launchAffLog do
       mbPort <- getPort stateRef
       if isJust mbPort then
-        rebuildAndSendDiagnostics config connection stateRef document
+        rebuildAndSendDiagnostics configRef connection stateRef document
       else do
         let uri = (un DocumentUri $ getUri document)
         liftEffect
@@ -527,7 +522,7 @@ handleEvents config connection stateRef documents notify = do
               stateRef
   onDidSaveDocument documents \{ document } ->
     launchAffLog do
-      rebuildAndSendDiagnostics config connection stateRef document
+      rebuildAndSendDiagnostics configRef connection stateRef document
 
 handleConfig ∷
   Ref Foreign ->
@@ -535,7 +530,7 @@ handleConfig ∷
   Ref ServerState ->
   DocumentStore ->
   Maybe Foreign -> Notify -> Aff Unit
-handleConfig config connection stateRef documents cmdLineConfig notify = do
+handleConfig configRef connection stateRef documents cmdLineConfig notify = do
   let launchAffLog = mkLaunchAffLog notify
   gotConfig ∷ AVar Unit <- AVar.empty
   let
@@ -543,7 +538,7 @@ handleConfig config connection stateRef documents cmdLineConfig notify = do
     setConfig source newConfig = do
       liftEffect do
         log connection $ "Got new config (" <> source <> ")"
-        Ref.write newConfig config
+        Ref.write newConfig configRef
       AVar.tryPut unit gotConfig
         >>= case _ of
             true -> pure unit
@@ -556,7 +551,7 @@ handleConfig config connection stateRef documents cmdLineConfig notify = do
     forkAff do
       -- Ensure we only run once
       AVar.read gotConfig
-      autoStartPcsIdeServer config connection stateRef notify documents
+      autoStartPcsIdeServer configRef connection stateRef notify documents
   -- 1. Config on command line - go immediately
   maybe (pure unit) (setConfig "command line") cmdLineConfig
   delay (Milliseconds 50.0)

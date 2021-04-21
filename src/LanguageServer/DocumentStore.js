@@ -1,10 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onDidChangeContent = exports.onDidCloseDocument = exports.onDidOpenDocument = exports.onDidSaveDocument = exports.getDocument = exports.getDocuments = void 0;
+exports.onDidChangeContent = exports.onDidCloseDocument = exports.onDidOpenDocument = exports.onDidSaveDocument = exports.getDocumentImpl = exports.getDocuments = void 0;
 const getDocuments = (documents) => () => documents.all();
 exports.getDocuments = getDocuments;
-const getDocument = (documents) => (uri) => () => documents.get(uri);
-exports.getDocument = getDocument;
+const getDocumentImpl = (just, nothing, documents, uri) => {
+    const doc = documents.get(uri);
+    return doc ? just(doc) : nothing;
+};
+exports.getDocumentImpl = getDocumentImpl;
 const onDidSaveDocument = (documents) => (f) => () => documents.onDidSave(p => f(p)());
 exports.onDidSaveDocument = onDidSaveDocument;
 const onDidOpenDocument = (documents) => (f) => () => documents.onDidOpen(p => f(p)());

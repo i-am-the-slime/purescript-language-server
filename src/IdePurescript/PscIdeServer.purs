@@ -26,7 +26,6 @@ import Effect.Aff as Aff
 import Effect.Class (class MonadEffect, liftEffect)
 import IdePurescript.Exec (getPathVar, findBins)
 import IdePurescript.PscIde (cwd) as PscIde
-import LanguageServer.Types (Connection)
 import Node.ChildProcess (ChildProcess, stderr, stdout)
 import Node.ChildProcess as CP
 import Node.Encoding (Encoding(..))

@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Error.Util (hush)
 import Control.Monad.Except (runExcept)
-import Data.Array (fold, fromFoldable, singleton, (:))
+import Data.Array (fold, singleton, (:))
 import Data.Either (Either(..))
 import Data.Foldable (all, for_)
 import Data.Maybe (Maybe(..), maybe)
@@ -36,17 +36,20 @@ addCompletionImport' existingEdit log docs config state@(ServerState { port, mod
   case connection, (runExcept <<< readString) <$> args, shouldAddImport of
     Just conn', [ Right identifier, mod, qual, Right uriRaw, Right ns ], true -> do
       let uri = DocumentUri uriRaw
-      doc <- liftEffect $ getDocument docs uri
-      version <- liftEffect $ getVersion doc
-      text <- liftEffect $ getText doc
-      edit <- addCompletionImportEdit log docs config state { identifier, mod: hush mod, qual: hush qual, uri } doc version text (parseNS ns)
-      case edit of
-        Right edits -> do
-          void $ applyEdit conn' (fold $ existingEdit : edits)
-          pure $ unsafeToForeign $ toNullable Nothing
-        Left res -> do
-          void $ applyEdit conn' existingEdit
-          pure res
+      maybeDoc <- liftEffect $ getDocument docs uri
+      case maybeDoc of
+        Nothing -> pure $ unsafeToForeign $ toNullable Nothing
+        Just doc -> do
+          version <- liftEffect $ getVersion doc
+          text <- liftEffect $ getText doc
+          edit <- addCompletionImportEdit log docs config state { identifier, mod: hush mod, qual: hush qual, uri } doc version text (parseNS ns)
+          case edit of
+            Right edits -> do
+              void $ applyEdit conn' (fold $ existingEdit : edits)
+              pure $ unsafeToForeign $ toNullable Nothing
+            Left res -> do
+              void $ applyEdit conn' existingEdit
+              pure res
     Just connection', _, _ ->  do
       void $ applyEdit connection' existingEdit
       pure $ unsafeToForeign $ toNullable Nothing
@@ -124,19 +127,22 @@ addModuleImport' log docs config state args = do
   let ServerState { port, modules, connection, clientCapabilities } = state
   case port, (runExcept <<< readString) <$> args of
     Just port', [ Right mod', qual', Right uri ] -> do
-      doc <- liftEffect $ getDocument docs (DocumentUri uri)
-      version <- liftEffect $ getVersion doc
-      text <- liftEffect $ getText doc
-      fileName <- liftEffect $ uriToFilename $ DocumentUri uri
-      { result: res } <- addModuleImport modules port' fileName text mod'
-      case res of
-        UpdatedImports result  -> do
-          let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
-          case connection, edit of
-            Just connection', Just edit' -> void $ applyEdit connection' edit'
-            _, _ -> pure unit
-        _ -> 
-          pure unit
+      maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+      case maybeDoc of
+        Nothing -> mempty
+        Just doc -> do
+          version <- liftEffect $ getVersion doc
+          text <- liftEffect $ getText doc
+          fileName <- liftEffect $ uriToFilename $ DocumentUri uri
+          { result: res } <- addModuleImport modules port' fileName text mod'
+          case res of
+            UpdatedImports result  -> do
+              let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
+              case connection, edit of
+                Just connection', Just edit' -> void $ applyEdit connection' edit'
+                _, _ -> pure unit
+            _ -> 
+              pure unit
       pure successResult
 
     _, args'-> do
@@ -160,22 +166,25 @@ organiseImports log docs config state args = do
   let ServerState { port, modules, connection, clientCapabilities } = state
   case port, (runExcept <<< readString) <$> args of
     Just port', [ Right uri ] -> do
-      doc <- liftEffect $ getDocument docs (DocumentUri uri)
-      version <- liftEffect $ getVersion doc
-      text <- liftEffect $ getText doc
-      fileName <- liftEffect $ uriToFilename $ DocumentUri uri
-      res <- organiseModuleImports log modules port' fileName text
-      case res of
-        Just { result } -> do
-          let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
-          case connection, edit of
-            Just connection', Just edit' -> void $ applyEdit connection' edit'
-            _, _ -> pure unit
-        _ -> pure unit
+      maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+      case maybeDoc of 
+        Nothing -> mempty
+        Just doc -> do
+          version <- liftEffect $ getVersion doc
+          text <- liftEffect $ getText doc
+          fileName <- liftEffect $ uriToFilename $ DocumentUri uri
+          res <- organiseModuleImports log modules port' fileName text
+          case res of
+            Just { result } -> do
+              let edit = makeMinimalWorkspaceEdit clientCapabilities (DocumentUri uri) version text result
+              case connection, edit of
+                Just connection', Just edit' -> void $ applyEdit connection' edit'
+                _, _ -> pure unit
+            _ -> pure unit
       pure successResult
 
     _, args'-> do
-      liftEffect $ log Info $ show args'
+      liftEffect $ log Info $ "Invalid args in organise imports " <> show args'
       pure successResult
 
     where

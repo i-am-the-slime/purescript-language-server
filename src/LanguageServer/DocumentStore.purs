@@ -2,13 +2,18 @@ module LanguageServer.DocumentStore where
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Effect (Effect)
+import Effect.Uncurried (EffectFn4, runEffectFn4)
 import LanguageServer.TextDocument (TextDocument)
 import LanguageServer.Types (DocumentStore, DocumentUri)
 
 foreign import getDocuments :: DocumentStore ->  Effect (Array TextDocument)
 
-foreign import getDocument :: DocumentStore -> DocumentUri -> Effect TextDocument
+foreign import getDocumentImpl :: EffectFn4 (TextDocument -> Maybe TextDocument) (Maybe TextDocument) DocumentStore DocumentUri (Maybe TextDocument)
+
+getDocument :: DocumentStore -> DocumentUri -> Effect (Maybe TextDocument)
+getDocument = runEffectFn4 getDocumentImpl Just Nothing 
 
 type TextDocumentChangeEvent = { document :: TextDocument }
 

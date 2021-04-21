@@ -107,12 +107,15 @@ continueSignatureHelp stateRef docs port modules params@{ textDocument } = do
   storedLoc <- Ref.read stateRef # liftEffect >>= orElse "no previous state"
   let stored = Zipper.value storedLoc
   let end = max params.position stored.maxPosition
-  doc <- getDocument docs (uri textDocument) # liftEffect
-  text <- getTextAtRange doc (Range { start: stored.startPosition, end }) # liftEffect
-  let relevantText = text
-  rangeIndex <- findArgumentIndex params.position storedLoc relevantText
-  inRangeIndex <- MZ.guard (rangeIndex < NonEmptyArray.length stored.parameters) $> rangeIndex
-  pure (stored.previousResponse # activeParameter .~ inRangeIndex)
+  maybeDoc <- getDocument docs (uri textDocument) # liftEffect
+  case maybeDoc of 
+    Nothing -> throwError "document not found"
+    Just doc -> do
+      text <- getTextAtRange doc (Range { start: stored.startPosition, end }) # liftEffect
+      let relevantText = text
+      rangeIndex <- findArgumentIndex params.position storedLoc relevantText
+      inRangeIndex <- MZ.guard (rangeIndex < NonEmptyArray.length stored.parameters) $> rangeIndex
+      pure (stored.previousResponse # activeParameter .~ inRangeIndex)
   where
   dropSuffix p s = String.stripSuffix p s # fromMaybe s
 
@@ -219,17 +222,20 @@ startSignatureHelp ∷ Ref (Maybe State)  -> DocumentStore -> Int ->
   , modules :: Array Module
   } -> SignatureHelpParams -> ExceptT String Aff SignatureHelp
 startSignatureHelp stateRef docs port modules params@{ textDocument } = do
-  doc <- getDocument docs (uri textDocument) # liftEffect
-  text <- getTextAtRange doc (lineRange startPosition) # liftEffect
-  { word, qualifier } <- identifierAtPoint text (startPosition ^. character) # orElse "no identifier at point"
-  let unqualifiedModules = getUnqualActiveModules modules (Just word)
-  let qualifiedModules state = getQualModule state modules
-  ideTypeInfo <- getTypeInfo port word modules.main qualifier unqualifiedModules qualifiedModules <#> note "no type info" # ExceptT
-  typeInfo@{ signatureHelp } <- typeInfoToSignatureHelp word ideTypeInfo # orElse "unparseable type"
-  -- The position on which the function starts
-  let wordStartPosition = startPosition # character %~ (_ - String.length word)
-  storeData word wordStartPosition typeInfo # liftEffect
-  pure signatureHelp
+  maybeDoc <- getDocument docs (uri textDocument) # liftEffect
+  case maybeDoc of
+    Nothing -> throwError "document not found"
+    Just doc -> do
+      text <- getTextAtRange doc (lineRange startPosition) # liftEffect
+      { word, qualifier } <- identifierAtPoint text (startPosition ^. character) # orElse "no identifier at point"
+      let unqualifiedModules = getUnqualActiveModules modules (Just word)
+      let qualifiedModules state = getQualModule state modules
+      ideTypeInfo <- getTypeInfo port word modules.main qualifier unqualifiedModules qualifiedModules <#> note "no type info" # ExceptT
+      typeInfo@{ signatureHelp } <- typeInfoToSignatureHelp word ideTypeInfo # orElse "unparseable type"
+      -- The position on which the function starts
+      let wordStartPosition = startPosition # character %~ (_ - String.length word)
+      storeData word wordStartPosition typeInfo # liftEffect
+      pure signatureHelp
   where
   startPosition ∷ Position
   -- Move one character to the left because a space (" ") triggers the completion

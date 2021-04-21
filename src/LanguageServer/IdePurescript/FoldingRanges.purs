@@ -1,8 +1,9 @@
 module LanguageServer.IdePurescript.FoldingRanges where
 
 import Prelude
+
 import Data.Array (findIndex, findLastIndex, fromFoldable)
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
 import Data.Nullable as Nullable
 import Data.String.CodeUnits as CodeUnits
 import Data.String.Regex (Regex)
@@ -15,17 +16,19 @@ import Effect.Class (liftEffect)
 import LanguageServer.DocumentStore (getDocument)
 import LanguageServer.Handlers (FoldingRangesParams)
 import LanguageServer.IdePurescript.Types (ServerState)
-import LanguageServer.TextDocument (getText, getVersion)
+import LanguageServer.TextDocument (getText)
 import LanguageServer.Types (DocumentStore, FoldingRange(..), Settings, TextDocumentIdentifier(..))
 
 getFoldingRanges :: DocumentStore -> Settings -> ServerState -> FoldingRangesParams -> Aff (Array FoldingRange)
-getFoldingRanges docs settings state { textDocument: TextDocumentIdentifier textDocId } =
+getFoldingRanges docs _ _ { textDocument: TextDocumentIdentifier textDocId } =
   liftEffect do
-    doc <- getDocument docs textDocId.uri
-    version <- getVersion doc
-    text <- getText doc
-    pure <<< fromFoldable
-      $ getImportsSection text
+    maybeDoc <- getDocument docs textDocId.uri
+    case maybeDoc of
+      Just doc -> do
+        text <- getText doc
+        pure <<< fromFoldable
+          $ getImportsSection text
+      Nothing -> mempty
 
 newlineRegex :: Regex
 newlineRegex = unsafeRegex "[\n\r]" noFlags

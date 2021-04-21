@@ -6,6 +6,7 @@ import Data.Array (catMaybes, singleton)
 import Data.Maybe (Maybe(Nothing, Just), maybe)
 import Data.Newtype (over, un)
 import Data.Nullable (toNullable, Nullable)
+import Data.Nullable as Nullable
 import Data.String (Pattern(..), contains)
 import Data.String as Str
 import Data.Traversable (traverse)
@@ -33,24 +34,27 @@ convTypePosition (Command.TypePosition {start, end}) = Range { start: convPositi
 getDefinition :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams
   -> Aff (Nullable Location)
 getDefinition docs settings state ({ textDocument, position }) = do
-    doc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
-    text <- liftEffect $ getTextAtRange doc (mkRange position)
-    let { port, modules, root } = un ServerState $ state
-    case port, root, identifierAtPoint text (_.character $ un Position position) of
-      Just port', Just root', Just { word, qualifier } -> do
-        info <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
-        liftEffect $ toNullable <$> case info of
-          Just (Command.TypeInfo { definedAt: Just (Command.TypePosition { name, start }) }) -> do
-            uri <- filenameToUri =<< resolve [ root' ] name
-            let range = Range { start: convPosition start, end: convPosition start }
-            pure $ Just $ Location { uri, range }
-          _ -> pure $ Nothing
-      _, _, _ -> pure $ toNullable Nothing
-    where
-    mkRange pos@(Position { line, character }) = Range
-        { start: pos # over Position (_ { character = 0 })
-        , end: pos # over Position (\c -> c { character = c.character + 100 })
-        }
+    maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
+    case maybeDoc of
+      Nothing -> pure Nullable.null
+      Just doc -> do
+        text <- liftEffect $ getTextAtRange doc (mkRange position)
+        let { port, modules, root } = un ServerState $ state
+        case port, root, identifierAtPoint text (_.character $ un Position position) of
+          Just port', Just root', Just { word, qualifier } -> do
+            info <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
+            liftEffect $ toNullable <$> case info of
+              Just (Command.TypeInfo { definedAt: Just (Command.TypePosition { name, start }) }) -> do
+                uri <- filenameToUri =<< resolve [ root' ] name
+                let range = Range { start: convPosition start, end: convPosition start }
+                pure $ Just $ Location { uri, range }
+              _ -> pure $ Nothing
+          _, _, _ -> pure $ toNullable Nothing
+        where
+        mkRange pos@(Position { line, character }) = Range
+            { start: pos # over Position (_ { character = 0 })
+            , end: pos # over Position (\c -> c { character = c.character + 100 })
+            }
 
 getDocumentSymbols :: Settings -> ServerState -> DocumentSymbolParams
   -> Aff (Array SymbolInformation)

@@ -3,7 +3,7 @@ module LanguageServer.IdePurescript.Assist where
 import Prelude
 
 import Control.Monad.Except (runExcept)
-import Data.Array (any, find, fold, foldl, intercalate, snoc, take, (!!), (:))
+import Data.Array (any, fold, foldl, intercalate, snoc, take, (!!))
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (over)
@@ -49,17 +49,20 @@ caseSplit docs _ state args = do
         , Right char <- runExcept $ readInt argChar
         , Right tyStr <- runExcept $ readString argType
         -> do
-            doc <- liftEffect $ getDocument docs (DocumentUri uri)
-            lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
-            version <- liftEffect $ getVersion doc
-            case identifierAtPoint lineText char of
-                Just { range: { left, right } } -> do
-                    lines <- eitherToErr $ P.caseSplit port' lineText left right false tyStr
-                    let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
-                    void $ applyEdit connection' edit
-                _ -> do liftEffect $ log connection' "fail identifier"
-                        pure unit
-            pure unit
+            maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+            case maybeDoc of
+              Nothing -> mempty
+              Just doc -> do
+                lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
+                version <- liftEffect $ getVersion doc
+                case identifierAtPoint lineText char of
+                    Just { range: { left, right } } -> do
+                        lines <- eitherToErr $ P.caseSplit port' lineText left right false tyStr
+                        let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
+                        void $ applyEdit connection' edit
+                    _ -> do liftEffect $ log connection' "fail identifier"
+                            pure unit
+                pure unit
     _, Just conn', [ argUri, argLine, argChar, argType ] ->
         liftEffect $ log conn' $ show [ show $ runExcept $ readString argUri, show $ runExcept $ readInt argLine , show $ runExcept $ readInt argChar, show $ runExcept $ readString argType ]
     _, _, _ -> do 
@@ -75,17 +78,20 @@ addClause docs _ state args = do
         , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
         , Right char <- runExcept $ readInt argChar
         -> do
-            doc <- liftEffect $ getDocument docs (DocumentUri uri)
-            lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
+            maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+            case maybeDoc of
+              Nothing -> mempty
+              Just doc -> do
+                lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
 
-            version <- liftEffect $ getVersion doc
-            case identifierAtPoint lineText char of
-                Just _ -> do
-                    lines <- eitherToErr $ P.addClause port' lineText false
-                    let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
-                    void $ applyEdit connection' edit
-                _ -> pure unit
-            pure unit
+                version <- liftEffect $ getVersion doc
+                case identifierAtPoint lineText char of
+                    Just _ -> do
+                        lines <- eitherToErr $ P.addClause port' lineText false
+                        let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
+                        void $ applyEdit connection' edit
+                    _ -> pure unit
+                pure unit
     _, _, _ -> pure unit
 
 newtype TypoResult 
@@ -110,28 +116,31 @@ fixTypoActions :: DocumentStore -> Settings -> ServerState -> DocumentUri -> Int
 fixTypoActions docs _ (ServerState { port, modules }) docUri line char =
   case port of
     Just port' -> do
-      doc <- liftEffect $ getDocument docs docUri
-      lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
-      case identifierAtPoint lineText char of
-        Just { word } -> do
-          res <- suggestTypos port' word 2 modules.main defaultCompletionOptions
-          pure $ case res of 
-            Left _ -> []
-            Right infos ->
-              infos 
-                # simplifyImportChoice
-                <#> (\(TypeInfo { type', identifier, module', declarationType }) ->
-                Commands.fixTypo' 
-                  do
-                    let decTypeString = renderDeclarationType type' identifier declarationType
-                    if identifier == word then
-                      "Import" <> decTypeString <> identifier <> " (" <> module' <> ")"
-                    else
-                      "Replace with " <> identifier <> " (" <> module' <> ")"  
-                  docUri line char
-                  (encodeTypoResult $ TypoResult { identifier, mod: module', declarationType: maybe "" declarationTypeToString declarationType }))
-              # take 10
-        Nothing -> pure []
+      maybeDoc <- liftEffect $ getDocument docs docUri
+      case maybeDoc of 
+        Nothing -> mempty
+        Just doc -> do
+          lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
+          case identifierAtPoint lineText char of
+            Nothing -> pure []
+            Just { word } -> do
+              res <- suggestTypos port' word 2 modules.main defaultCompletionOptions
+              pure $ case res of 
+                Left _ -> []
+                Right infos ->
+                  infos 
+                    # simplifyImportChoice
+                    <#> (\(TypeInfo { type', identifier, module', declarationType }) ->
+                    Commands.fixTypo' 
+                      do
+                        let decTypeString = renderDeclarationType type' identifier declarationType
+                        if identifier == word then
+                          "Import" <> decTypeString <> identifier <> " (" <> module' <> ")"
+                        else
+                          "Replace with " <> identifier <> " (" <> module' <> ")"  
+                      docUri line char
+                      (encodeTypoResult $ TypoResult { identifier, mod: module', declarationType: maybe "" declarationTypeToString declarationType }))
+                  # take 10
     _ -> pure []
     where
       renderDeclarationType type' identifier = case _ of
@@ -187,13 +196,16 @@ fixTypo log docs settings state@(ServerState { clientCapabilities }) args = do
       | Right uri <- runExcept $ readString argUri
       , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
       , Right char <- runExcept $ readInt argChar -> do
-        doc <- liftEffect $ getDocument docs (DocumentUri uri)
-        lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
-        version <- liftEffect $ getVersion doc
-        case identifierAtPoint lineText char, (runExcept <<< decodeTypoResult) <$> args !! 3 of
-            Just { range }, Just (Right (TypoResult { identifier, mod, declarationType })) -> 
-              void $ replace uri version line range identifier mod declarationType
-            _, _ -> pure unit
+        maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+        case maybeDoc of 
+          Nothing -> mempty
+          Just doc -> do
+            lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
+            version <- liftEffect $ getVersion doc
+            case identifierAtPoint lineText char, (runExcept <<< decodeTypoResult) <$> args !! 3 of
+                Just { range }, Just (Right (TypoResult { identifier, mod, declarationType })) -> 
+                  void $ replace uri version line range identifier mod declarationType
+                _, _ -> pure unit
     _, _, _ -> pure unit
 
   where
@@ -215,20 +227,23 @@ fillTypedHole logFn docs settings state args = do
       , Right uri <- runExcept $ readString argUri
       , TypeInfo { identifier, module': mod } <- readTypeInfo argChoice
      -> do
-      doc <- liftEffect $ getDocument docs (DocumentUri uri)
-      version <- liftEffect $ getVersion doc
-      text <- liftEffect $ getText doc
-      let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version range identifier
-      edit' <- either (const []) identity <$> addCompletionImportEdit logFn docs settings state
-         { identifier, mod: Just mod , qual: Nothing, uri: DocumentUri uri }
-        doc version text Nothing
-      let edit2 = edit <> fold edit'
-      applyRes <- applyEdit conn' $ edit2 -- edit <> fold edit'
-      liftEffect $ log conn' $ "Applied: " <> show applyRes
-      -- -- Seems that even after waiting for the edit response, changes will be lost 
-      -- delay $ Milliseconds 300.0
-      _ <- addCompletionImport logFn docs settings state [ unsafeToForeign identifier, unsafeToForeign mod, unsafeToForeign Nothing, unsafeToForeign uri ]
-      pure unit
+      maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
+      case maybeDoc of
+        Nothing -> mempty
+        Just doc -> do
+          version <- liftEffect $ getVersion doc
+          text <- liftEffect $ getText doc
+          let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version range identifier
+          edit' <- either (const []) identity <$> addCompletionImportEdit logFn docs settings state
+            { identifier, mod: Just mod , qual: Nothing, uri: DocumentUri uri }
+            doc version text Nothing
+          let edit2 = edit <> fold edit'
+          applyRes <- applyEdit conn' $ edit2 -- edit <> fold edit'
+          liftEffect $ log conn' $ "Applied: " <> show applyRes
+          -- -- Seems that even after waiting for the edit response, changes will be lost 
+          -- delay $ Milliseconds 300.0
+          _ <- addCompletionImport logFn docs settings state [ unsafeToForeign identifier, unsafeToForeign mod, unsafeToForeign Nothing, unsafeToForeign uri ]
+          pure unit
     _, _ -> do 
       liftEffect $ maybe (pure unit) (flip log "fail match") connection
       pure unit

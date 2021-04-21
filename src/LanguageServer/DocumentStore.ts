@@ -1,10 +1,12 @@
 import { TextDocuments, TextDocumentChangeEvent } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
-
 export const getDocuments = (documents: TextDocuments<TextDocument>) => () => documents.all();
 
-export const getDocument = (documents: TextDocuments<TextDocument>) => (uri: string) => () => documents.get(uri);
+export const getDocumentImpl = (just: (_:any) => any, nothing: any, documents: TextDocuments<TextDocument>, uri: string) => { 
+    const doc = documents.get(uri)
+    return doc ? just(doc) : nothing
+};
 
 export const onDidSaveDocument = (documents: TextDocuments<TextDocument>) => (f: (e: TextDocumentChangeEvent<TextDocument>) => () => void) => () => documents.onDidSave(p => f(p)());
 

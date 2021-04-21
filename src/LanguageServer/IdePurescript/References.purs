@@ -28,24 +28,27 @@ import PscIde.Command as Command
 getReferences :: DocumentStore -> Settings -> ServerState -> ReferenceParams
   -> Aff (Array Location)
 getReferences docs settings state ({ textDocument, position }) = do
-    doc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
-    text <- liftEffect $ getTextAtRange doc (mkRange position)
-    let { port, modules, root } = un ServerState $ state
-    case port, root, identifierAtPoint text (_.character $ un Position position) of
-      Just port', Just root', Just { word, qualifier } -> do
-        info <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
-        case info of
-          Just (Command.TypeInfo { module', type' }) -> do
-            let ns = case type' of
-                      "Type" -> NSType
-                      _ | endsWith "-> Type" type' -> NSType
-                      _ -> NSValue
+    maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
+    case maybeDoc of
+      Nothing -> pure []
+      Just doc -> do
+        text <- liftEffect $ getTextAtRange doc (mkRange position)
+        let { port, modules, root } = un ServerState $ state
+        case port, root, identifierAtPoint text (_.character $ un Position position) of
+          Just port', Just root', Just { word, qualifier } -> do
+            info <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
+            case info of
+              Just (Command.TypeInfo { module', type' }) -> do
+                let ns = case type' of
+                          "Type" -> NSType
+                          _ | endsWith "-> Type" type' -> NSType
+                          _ -> NSValue
 
-            usg <- usages port' module' ns word
-            
-            liftEffect $ either (pure $ pure []) (traverse $ convLocation root') usg
-          _ -> pure $ []
-      _, _, _ -> pure $ []
+                usg <- usages port' module' ns word
+                
+                liftEffect $ either (pure $ pure []) (traverse $ convLocation root') usg
+              _ -> pure []
+          _, _, _ -> pure []
     where
 
 

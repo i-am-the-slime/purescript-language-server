@@ -26,15 +26,18 @@ import Node.Stream as S
 
 getFormattedDocument :: Notify -> DocumentStore -> Settings -> ServerState -> DocumentFormattingParams -> Aff (Array TextEdit)
 getFormattedDocument logCb docs settings serverState { textDocument: TextDocumentIdentifier textDocId } = do
-  text <- liftEffect $ getText =<< getDocument docs textDocId.uri
-  newTextEither <- attempt $ formatWithPurty logCb settings serverState text
+  maybeDoc <- getDocument docs textDocId.uri # liftEffect
+  case maybeDoc of
+     Nothing -> mempty
+     Just doc -> do
+        text <- liftEffect $ getText doc 
+        newTextEither <- attempt $ formatWithPurty logCb settings serverState text
+        case newTextEither of
+          Left err -> liftEffect (logCb Error $ show err) $> []
+          Right "" -> pure []
+          Right newText -> pure [ mkTextEdit text newText ]
 
-  case newTextEither of
-    Left err -> liftEffect (logCb Error $ show err) $> []
-    Right "" -> pure []
-    Right newText -> pure [ mkTextEdit text newText ]
-
-formatWithPurty :: Notify ->Settings -> ServerState -> String -> Aff String
+formatWithPurty :: Notify -> Settings -> ServerState -> String -> Aff String
 formatWithPurty logCb settings state text = do
   case state of 
     ServerState { root: Just directory } -> do
