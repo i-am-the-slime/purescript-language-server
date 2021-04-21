@@ -17,11 +17,10 @@ import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing, maybe, maybe')
 import Data.Newtype (over, un)
 import Data.Nullable as Nullable
 import Data.Profunctor.Strong (first)
-import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (Aff, Milliseconds(..), apathize, attempt, delay, forkAff, launchAff_, runAff_, try)
+import Effect.Aff (Aff, Fiber, Milliseconds(..), apathize, attempt, delay, forkAff, launchAff_, runAff, try)
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar as AVar
 import Effect.Class (class MonadEffect, liftEffect)
@@ -39,6 +38,7 @@ import LanguageServer.DocumentStore (getDocument, onDidChangeContent, onDidOpenD
 import LanguageServer.Handlers (onCodeAction, onCompletion, onDefinition, onDidChangeConfiguration, onDidChangeWatchedFiles, onDocumentSymbol, onExecuteCommand, onFoldingRanges, onDocumentFormatting, onHover, onReferences, onShutdown, onWorkspaceSymbol, publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
 import LanguageServer.IdePurescript.Assist (addClause, caseSplit, fillTypedHole, fixTypo)
 import LanguageServer.IdePurescript.Build (collectByFirst, fullBuild, getDiagnostics)
+import LanguageServer.IdePurescript.ChangeContent (handleDidChangeContent)
 import LanguageServer.IdePurescript.CodeActions (getActions, onReplaceAllSuggestions, onReplaceSuggestion)
 import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, typedHoleExplicitCmd)
 import LanguageServer.IdePurescript.Completion (getCompletions)
@@ -205,6 +205,7 @@ getWorkspaceRoot stateRef = do
 -- getConnection :: Ref ServerState -> Effect (Maybe Connection)
 -- getConnection stateRef = do
 --   (_.connection <<< unwrap) <$> Ref.read stateRef
+
 -- | Read port from state
 getPort ∷ ∀ eff. MonadEffect eff => Ref ServerState -> eff (Maybe Int)
 getPort stateRef =
@@ -316,8 +317,8 @@ buildProject connection stateRef notify docs c s arguments = do
             showError connection err
   liftEffect $ sendDiagnosticsEnd connection
 
-mkLaunchAffLog ∷ ∀ a. Notify -> Aff a -> Effect Unit
-mkLaunchAffLog notify = runAff_ $ 
+mkLaunchAffLog ∷ ∀ a. Notify -> Aff a -> Effect (Fiber Unit)
+mkLaunchAffLog notify = runAff $ 
   either (notify Error <<< show) 
     (const $ pure unit)
 
@@ -331,7 +332,7 @@ autoStartPcsIdeServer ∷
   Aff Unit
 autoStartPcsIdeServer configRef connection stateRef notify documents = do
   let workspaceRoot = getWorkspaceRoot stateRef
-  let launchAffLog = mkLaunchAffLog notify
+  let launchAffLog_ = void <$> mkLaunchAffLog notify
   let startPscIdeServer = mkStartPscIdeServer configRef connection stateRef notify
   let resolvePath p = workspaceRoot >>= \root -> resolve [ root ] p
   -- Ensure we only run once
@@ -357,7 +358,7 @@ autoStartPcsIdeServer configRef connection stateRef notify documents = do
                 )
         exists <- FS.exists outputDir
         unless exists $ liftEffect
-          $ launchAffLog do
+          $ launchAffLog_ do
               let message = "Output directory does not exist at '" <> outputDir <> "'"
               liftEffect $ info connection message
               let buildOption = "Build project"
@@ -429,7 +430,8 @@ rebuildAndSendDiagnostics configRef connection stateRef document = do
         , diagnostics: fileDiagnostics -- <> organizeDiagnostics
         }
       sendDiagnosticsEnd connection
-      log connection $ "Fast rebuild done in " <> show (un Milliseconds buildTime) <> "ms"
+      log connection 
+        $ "Fast rebuild done in " <> show (un Milliseconds buildTime) <> "ms"
 
 timeDifference :: Instant -> Instant -> Milliseconds
 timeDifference start end = do
@@ -446,8 +448,11 @@ handleEvents ∷
 handleEvents configRef connection stateRef documents notify = do
   let
     runHandler = mkRunHandler configRef stateRef documents
+    startPscIdeServer = mkStartPscIdeServer configRef connection stateRef notify
     stopPscIdeServer = mkStopPscIdeServer stateRef notify
+    restartPscIdeServer = apathize stopPscIdeServer *> startPscIdeServer
     launchAffLog = mkLaunchAffLog notify
+    launchAffLog_ = void <$> launchAffLog
   onCompletion connection
     $ runHandler
         "onCompletion"
@@ -499,12 +504,13 @@ handleEvents configRef connection stateRef documents notify = do
     $ launchAff_ 
     <<< handleDidChangeWatchedFiles configRef connection stateRef documents
   onDidChangeContent documents
-    $ \_ -> do
+    $ \textDocumentChangedEvent -> do
+        handleDidChangeContent configRef connection stateRef restartPscIdeServer launchAffLog textDocumentChangedEvent
         Ref.modify_ (over ServerState (_ { modulesFile = Nothing })) stateRef
   -- On document opened rebuild it,
   -- or place it in a queue if no IDE server started
   onDidOpenDocument documents \{ document } ->
-    launchAffLog do
+    launchAffLog_ do
       mbPort <- getPort stateRef
       if isJust mbPort then
         rebuildAndSendDiagnostics configRef connection stateRef document
@@ -515,13 +521,13 @@ handleEvents configRef connection stateRef documents notify = do
               ( over ServerState
                   ( \st ->
                       st
-                        { buildQueue = Object.insert uri document (st.buildQueue)
+                        { buildQueue = Object.insert uri document st.buildQueue
                         }
                   )
               )
               stateRef
   onDidSaveDocument documents \{ document } ->
-    launchAffLog do
+    launchAffLog_ do
       rebuildAndSendDiagnostics configRef connection stateRef document
 
 handleConfig ∷
@@ -531,7 +537,7 @@ handleConfig ∷
   DocumentStore ->
   Maybe Foreign -> Notify -> Aff Unit
 handleConfig configRef connection stateRef documents cmdLineConfig notify = do
-  let launchAffLog = mkLaunchAffLog notify
+  let launchAffLog = void <$> mkLaunchAffLog notify
   gotConfig ∷ AVar Unit <- AVar.empty
   let
     setConfig ∷ String -> Foreign -> Aff Unit
@@ -540,9 +546,8 @@ handleConfig configRef connection stateRef documents cmdLineConfig notify = do
         log connection $ "Got new config (" <> source <> ")"
         Ref.write newConfig configRef
       AVar.tryPut unit gotConfig
-        >>= case _ of
-            true -> pure unit
-            false -> liftEffect $ notify Info "Not starting server, already started"
+        >>= if _ then pure unit
+            else liftEffect $ notify Info "Not starting server, already started"
   liftEffect 
     $ onDidChangeConfiguration connection
     $ \{ settings } ->
@@ -558,13 +563,16 @@ handleConfig configRef connection stateRef documents cmdLineConfig notify = do
   -- 2. Config may be pushed immediately
   got1 <- AVar.isFilled <$> AVar.status gotConfig
   unless got1 do
-    -- 3. Fetch config via pull (waited 50ms as at least in vscode, not ready immediately)
+    -- 3. Fetch config via pull 
+    -- (waited 50ms as at least in vscode, not ready immediately)
     initialConfig <- attempt $ getConfiguration connection
     case initialConfig of
       Right ic -> setConfig "by request" ic
       Left error -> do
-        liftEffect $ log connection $ "Failed to request settings: " <> show error
-        -- 4. Wait some time longer for possible config push, then proceed with no config
+        liftEffect $ log connection 
+          $ "Failed to request settings: " <> show error
+        -- 4. Wait some time longer for possible config push, 
+        -- then proceed with no config
         delay (Milliseconds 200.0)
         got2 <- AVar.isFilled <$> AVar.status gotConfig
         unless got2 do
@@ -599,23 +607,23 @@ handleCommands configRef connection stateRef documents notify = do
     simpleHandler handler _ _ _ _ = handler $> noResult
     handlers ∷ Object (CommandHandler Foreign)
     handlers =
-      Object.fromFoldable $ first cmdName
-        <$> [ Tuple caseSplitCmd $ voidHandler caseSplit
-          , Tuple addClauseCmd $ voidHandler addClause
-          , Tuple replaceSuggestionCmd $ voidHandler onReplaceSuggestion
-          , Tuple replaceAllSuggestionsCmd $ voidHandler onReplaceAllSuggestions
-          , Tuple buildCmd $ voidHandler onBuild
-          , Tuple addCompletionImportCmd $ addCompletionImport notify
-          , Tuple addModuleImportCmd $ voidHandler $ addModuleImport' notify
-          , Tuple organiseImportsCmd $ organiseImports notify
-          , Tuple startPscIdeCmd $ simpleHandler startPscIdeServer
-          , Tuple stopPscIdeCmd $ simpleHandler stopPscIdeServer
-          , Tuple restartPscIdeCmd $ simpleHandler restartPscIdeServer
-          , Tuple getAvailableModulesCmd $ getAllModules notify
-          , Tuple searchCmd $ search
-          , Tuple fixTypoCmd $ fixTypo notify
-          , Tuple typedHoleExplicitCmd $ voidHandler $ fillTypedHole notify
-          ]
+      Object.fromFoldable $ first cmdName <$> 
+        [ Tuple caseSplitCmd $ voidHandler caseSplit
+        , Tuple addClauseCmd $ voidHandler addClause
+        , Tuple replaceSuggestionCmd $ voidHandler onReplaceSuggestion
+        , Tuple replaceAllSuggestionsCmd $ voidHandler onReplaceAllSuggestions
+        , Tuple buildCmd $ voidHandler onBuild
+        , Tuple addCompletionImportCmd $ addCompletionImport notify
+        , Tuple addModuleImportCmd $ voidHandler $ addModuleImport' notify
+        , Tuple organiseImportsCmd $ organiseImports notify
+        , Tuple startPscIdeCmd $ simpleHandler startPscIdeServer
+        , Tuple stopPscIdeCmd $ simpleHandler stopPscIdeServer
+        , Tuple restartPscIdeCmd $ simpleHandler restartPscIdeServer
+        , Tuple getAvailableModulesCmd $ getAllModules notify
+        , Tuple searchCmd $ search
+        , Tuple fixTypoCmd $ fixTypo notify
+        , Tuple typedHoleExplicitCmd $ voidHandler $ fillTypedHole notify
+        ]
   onExecuteCommand connection
     $ \{ command, arguments } ->
         Promise.fromAff do
