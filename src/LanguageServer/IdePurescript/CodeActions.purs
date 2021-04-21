@@ -18,10 +18,11 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Foreign (F, Foreign, readArray, readString)
 import Foreign.Index ((!))
+import Foreign.Internal.Stringify (unsafeStringify)
 import Foreign.Object as Object
 import IdePurescript.QuickFix (getReplacement, getTitle, isImport, isUnknownToken)
 import IdePurescript.Regex (replace')
-import LanguageServer.Console (log)
+import LanguageServer.Console as LanguageServerConsole
 import LanguageServer.DocumentStore (getDocument)
 import LanguageServer.Handlers (CodeActionParams, applyEdit)
 import LanguageServer.IdePurescript.Assist (fixTypoActions)
@@ -53,11 +54,9 @@ codeActionToCommand capabilities action = codeActionResult <$>
   convert _ = Nothing
 
 getActions :: DocumentStore -> Settings -> ServerState -> CodeActionParams -> Aff (Array CodeActionResult)
-getActions documents settings state@(ServerState { diagnostics, connection: Just connection, clientCapabilities }) { textDocument, range, context } =
+getActions documents settings state@(ServerState { diagnostics, connection: Just _, clientCapabilities }) { textDocument, range } = do
   case Object.lookup (un DocumentUri $ docUri) diagnostics of
     Just errs -> mapMaybe (codeActionToCommand clientCapabilities) <$> do
-      liftEffect$ log connection $ show clientCapabilities
-      liftEffect$ log connection $ "Literals supported: " <> show (codeActionLiteralsSupported <$> clientCapabilities)
       
       codeActions <- traverse commandForCode errs
       pure $
@@ -84,12 +83,11 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
       range' = positionToRange $ fromMaybe position replaceRange
     getReplacementRange _ = Nothing
 
-
     notImplicitPrelude = filter (\(RebuildError { errorCode, message }) -> not (errorCode == "ImplicitImport" && String.contains (Pattern "Module Prelude") message))
 
     allImportSuggestions errs = map (Left <<< commandAction codeActionEmpty) $
       -- fixAllCommand "Organize Imports" (filter (\(RebuildError { errorCode, position }) -> isImport errorCode ) errs)
-        fixAllCommand "Apply all import suggestions" (filter (\(RebuildError { errorCode, position }) -> isImport errorCode) errs)
+        fixAllCommand "Apply all import suggestions" (filter (\(RebuildError { errorCode }) -> isImport errorCode) errs)
         -- TODO this seems to filter out all but 1 error?
           -- maybe false (\pos -> intersects (positionToRange pos) range) position) errs)
 
@@ -126,14 +124,17 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
 getActions _ _ _ _ = pure []
 
 commandAction :: CodeActionKind -> Command -> CodeAction
-commandAction kind c@(Command { title }) = CodeAction { title, kind, isPreferred: false, edit: Nullable.toNullable Nothing
-                                                      , command: Nullable.toNullable $ Just c }
+commandAction kind c@(Command { title }) = 
+  CodeAction 
+    { title
+    , kind
+    , isPreferred: false
+    , edit: Nullable.toNullable Nothing
+    , command: Nullable.toNullable $ Just c 
+    }
   
   -- codeActionSourceOrganizeImports
   -- codeActionEmpty
- 
-
-
 
 afterEnd :: Range -> Range
 afterEnd (Range { end: end@(Position { line, character }) }) =
@@ -143,14 +144,14 @@ afterEnd (Range { end: end@(Position { line, character }) }) =
     }
 
 toNextLine :: Range -> Range
-toNextLine (Range { start, end: end@(Position { line, character }) }) =
+toNextLine (Range { start, end: Position { line } }) =
   Range
     { start
     , end: Position { line: line+1, character: 0 }
     }
 
 onReplaceSuggestion :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-onReplaceSuggestion docs config (ServerState { connection, clientCapabilities }) args =
+onReplaceSuggestion docs _ (ServerState { connection, clientCapabilities }) args =
   case connection, args of
     Just conn', [ uri', replacement', range' ]
       | Right uri <- runExcept $ readString uri'
@@ -169,7 +170,6 @@ onReplaceSuggestion docs config (ServerState { connection, clientCapabilities })
 
 getReplacementEdit :: TextDocument -> Replacement -> Aff TextEdit
 getReplacementEdit doc { replacement, range } = do
-  origText <- liftEffect $ getTextAtRange doc range
   afterText <- liftEffect $ replace' (regex "\n$" noFlags) "" <$> getTextAtRange doc (afterEnd range)
 
   let newText = getReplacement replacement afterText
@@ -181,21 +181,26 @@ getReplacementEdit doc { replacement, range } = do
   pure $ TextEdit { range: range', newText }
 
 onReplaceAllSuggestions :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-onReplaceAllSuggestions docs config (ServerState { connection, clientCapabilities }) args =
-  case connection, args of
-    Just conn', [ uri', suggestions' ]
+onReplaceAllSuggestions docs _ (ServerState state) args =
+  case state.connection, args of
+    Just connection, [ uri', suggestions' ]
       | Right uri <- runExcept $ readString uri'
       , Right suggestions <- runExcept $ readArray suggestions' >>= traverse readSuggestion
       -> do
           doc <- liftEffect $ getDocument docs (DocumentUri uri)
           version <- liftEffect $ getVersion doc
           edits <- traverse (getReplacementEdit doc) suggestions
-          void $ applyEdit conn' $ workspaceEdit clientCapabilities
+          void $ applyEdit connection $ workspaceEdit state.clientCapabilities
             [ TextDocumentEdit
               { textDocument: TextDocumentIdentifier { uri: DocumentUri uri, version }
               , edits
               }
             ]
+    Just connection, other -> liftEffect do
+      LanguageServerConsole.log connection $ 
+        "[onReplaceAllSuggestions]: " <> 
+          "received unexpected args" <> 
+          unsafeStringify other
     _, _ -> pure unit
 
 readSuggestion :: Foreign -> F Replacement

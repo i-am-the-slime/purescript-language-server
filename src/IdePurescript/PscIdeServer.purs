@@ -17,6 +17,7 @@ import Data.Int as Int
 import Data.Maybe (Maybe(Just, Nothing), fromMaybe, isNothing, maybe)
 import Data.Posix.Signal (Signal(..))
 import Data.String (Pattern(Pattern), split, toLower)
+import Data.String as String
 import Data.Time.Duration (Milliseconds(..))
 import Data.Traversable (traverse, traverse_)
 import Effect (Effect)
@@ -25,6 +26,7 @@ import Effect.Aff as Aff
 import Effect.Class (class MonadEffect, liftEffect)
 import IdePurescript.Exec (getPathVar, findBins)
 import IdePurescript.PscIde (cwd) as PscIde
+import LanguageServer.Types (Connection)
 import Node.ChildProcess (ChildProcess, stderr, stdout)
 import Node.ChildProcess as CP
 import Node.Encoding (Encoding(..))
@@ -122,10 +124,20 @@ startServer' settings@({ exe: server }) path addNpmBin cb logCb = do
         Closed -> noRes <$ cb Info "IDE server exited with success code"
         StartError err -> noRes <$ (cb Error $ "Could not start IDE server process. Check the configured port number is valid.\n" <> err)
   where
-    wireOutput :: ChildProcess -> Notify-> Effect Unit
+    wireOutput :: ChildProcess -> Notify -> Effect Unit
     wireOutput cp log = do
       onDataString (stderr cp) UTF8 (log Warning)
-      onDataString (stdout cp) UTF8 (log Info)
+      onDataString (stdout cp) UTF8 (muteReexportsWarn (log Info))
+
+    -- | This mutes buggy warning coming from purs-ide, just to keep the output clean.
+    -- | The issue: https://github.com/purescript/purescript/issues/3377
+    muteReexportsWarn ::
+      (String → Effect Unit) -> String -> Effect Unit
+    muteReexportsWarn logFn message =
+      unless (message # String.contains reexportMessage) do
+        logFn message
+      where
+      reexportMessage = String.Pattern "Failed to resolve reexports for Type."
 
 -- | Start a psc-ide server instance, or find one already running on the expected port, checking if it has the right path.
 startServer :: Notify -> ServerSettings -> String -> Aff ServerStartResult

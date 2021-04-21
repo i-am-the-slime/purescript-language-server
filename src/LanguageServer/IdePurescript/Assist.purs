@@ -3,7 +3,7 @@ module LanguageServer.IdePurescript.Assist where
 import Prelude
 
 import Control.Monad.Except (runExcept)
-import Data.Array (fold, intercalate, take, (!!))
+import Data.Array (any, find, fold, foldl, intercalate, snoc, take, (!!), (:))
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (over)
@@ -34,13 +34,13 @@ lineRange' :: Int -> Int -> Range
 lineRange' line character = lineRange $ Position { line, character }
 
 lineRange :: Position -> Range
-lineRange pos@(Position { line, character }) = Range 
+lineRange pos = Range 
     { start: pos # over Position (_ { character = 0 })
     , end: pos # over Position (_ { character = (top :: Int) })
     }
 
 caseSplit :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-caseSplit docs settings state args = do
+caseSplit docs _ state args = do
   let ServerState { port, connection, clientCapabilities } = state
   case port, connection, args of
     Just port', Just connection', [ argUri, argLine, argChar, argType ]
@@ -67,7 +67,7 @@ caseSplit docs settings state args = do
         pure unit
 
 addClause :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
-addClause docs settings state args = do
+addClause docs _ state args = do
   let ServerState { port, connection, clientCapabilities } = state
   case port, connection, args of
     Just port', Just connection', [ argUri, argLine, argChar ]
@@ -80,7 +80,7 @@ addClause docs settings state args = do
 
             version <- liftEffect $ getVersion doc
             case identifierAtPoint lineText char of
-                Just { range: { left, right } } -> do
+                Just _ -> do
                     lines <- eitherToErr $ P.addClause port' lineText false
                     let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
                     void $ applyEdit connection' edit
@@ -107,20 +107,20 @@ decodeTypoResult obj = do
   pure $ TypoResult { identifier, mod , declarationType }
 
 fixTypoActions :: DocumentStore -> Settings -> ServerState -> DocumentUri -> Int -> Int -> Aff (Array Command)
-fixTypoActions docs settings state@(ServerState { port, connection, modules, clientCapabilities }) docUri line char =
-  case port, connection of
-    Just port', Just connection' -> do
+fixTypoActions docs _ (ServerState { port, modules }) docUri line char =
+  case port of
+    Just port' -> do
       doc <- liftEffect $ getDocument docs docUri
       lineText <- liftEffect $ getTextAtRange doc (lineRange' line char)
-      version <- liftEffect $ getVersion doc
       case identifierAtPoint lineText char of
-        Just { word, range } -> do
+        Just { word } -> do
           res <- suggestTypos port' word 2 modules.main defaultCompletionOptions
           pure $ case res of 
             Left _ -> []
             Right infos ->
-              take 10 $
-              map (\tinfo@(TypeInfo { type', identifier, module', declarationType }) ->
+              infos 
+                # simplifyImportChoice
+                <#> (\(TypeInfo { type', identifier, module', declarationType }) ->
                 Commands.fixTypo' 
                   do
                     let decTypeString = renderDeclarationType type' identifier declarationType
@@ -130,9 +130,9 @@ fixTypoActions docs settings state@(ServerState { port, connection, modules, cli
                       "Replace with " <> identifier <> " (" <> module' <> ")"  
                   docUri line char
                   (encodeTypoResult $ TypoResult { identifier, mod: module', declarationType: maybe "" declarationTypeToString declarationType }))
-                infos
+              # take 10
         Nothing -> pure []
-    _, _ -> pure []
+    _ -> pure []
     where
       renderDeclarationType type' identifier = case _ of
         Nothing -> " : "
@@ -150,10 +150,40 @@ fixTypoActions docs settings state@(ServerState { port, connection, modules, cli
           " function: " else
           " value: "
 
+-- | Removes choices that are not worth the brain-cycles to make.
+-- | 
+-- | If there are two suggestions to 
+-- |   1. import Something(..) and
+-- |   2. import Something 
+-- | We only import Something(..) because it can be automatically simplified
+-- | with an optimise import action
+simplifyImportChoice :: Array TypeInfo -> Array TypeInfo
+simplifyImportChoice before = foldl go [] before
+  where
+  go acc info = 
+    if isType info && any (isTheSameButDataConstructor info) before then
+      acc
+    else
+      snoc acc info 
+
+  isType = case _ of 
+    TypeInfo {declarationType: Just DeclType} -> true
+    _ -> false
+
+  isDataConstructor = case _ of 
+    TypeInfo {declarationType: Just DeclDataConstructor} -> true
+    TypeInfo {declarationType: Just DeclValue, identifier } | startsWithCapitalLetter identifier -> true
+    _ -> false
+
+  isTheSameButDataConstructor (TypeInfo ti1) info2@(TypeInfo ti2) =
+    ti1.identifier == ti2.identifier &&
+    ti1.module' == ti2.module' &&
+    isDataConstructor info2
+
 fixTypo :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-fixTypo log docs settings state@(ServerState { port, connection, modules, clientCapabilities }) args = do
-  unsafeToForeign <$> case port, connection, args !! 0, args !! 1, args !! 2 of
-    Just port', Just conn', Just argUri, Just argLine, Just argChar
+fixTypo log docs settings state@(ServerState { clientCapabilities }) args = do
+  unsafeToForeign <$> case args !! 0, args !! 1, args !! 2 of
+    Just argUri, Just argLine, Just argChar
       | Right uri <- runExcept $ readString argUri
       , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
       , Right char <- runExcept $ readInt argChar -> do
@@ -162,12 +192,12 @@ fixTypo log docs settings state@(ServerState { port, connection, modules, client
         version <- liftEffect $ getVersion doc
         case identifierAtPoint lineText char, (runExcept <<< decodeTypoResult) <$> args !! 3 of
             Just { range }, Just (Right (TypoResult { identifier, mod, declarationType })) -> 
-              void $ replace conn' uri version line range identifier mod declarationType
+              void $ replace uri version line range identifier mod declarationType
             _, _ -> pure unit
-    _, _, _, _, _ -> pure unit
+    _, _, _ -> pure unit
 
   where
-    replace conn' uri version line {left, right} word mod declarationType = do 
+    replace uri version line {left, right} word mod declarationType = do 
       let range = Range { start: Position { line, character: left }
                         , end: Position { line, character: right }
                         }
@@ -178,9 +208,9 @@ fixTypo log docs settings state@(ServerState { port, connection, modules, client
 
 fillTypedHole :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 fillTypedHole logFn docs settings state args = do
-  let ServerState { port, connection, clientCapabilities } = state
-  case port, connection, args of
-    Just port', Just conn', [ _, argUri, range', argChoice ]
+  let ServerState { connection, clientCapabilities } = state
+  case connection, args of
+    Just conn', [ _, argUri, range', argChoice ]
       | Right range <- runExcept $ readRange range'
       , Right uri <- runExcept $ readString argUri
       , TypeInfo { identifier, module': mod } <- readTypeInfo argChoice
@@ -199,7 +229,7 @@ fillTypedHole logFn docs settings state args = do
       -- delay $ Milliseconds 300.0
       _ <- addCompletionImport logFn docs settings state [ unsafeToForeign identifier, unsafeToForeign mod, unsafeToForeign Nothing, unsafeToForeign uri ]
       pure unit
-    _, _, _ -> do 
+    _, _ -> do 
       liftEffect $ maybe (pure unit) (flip log "fail match") connection
       pure unit
   where

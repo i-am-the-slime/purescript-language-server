@@ -18,7 +18,6 @@ newtype ServerState = ServerState
   , root :: Maybe String
   , connection :: Maybe Connection
   , runningRebuild :: Maybe (Fiber Unit)
-  , buildQueue :: Object TextDocument
   , successfulBuildTimes :: Object (Array Milliseconds)
   , modules :: State
   , modulesFile :: Maybe DocumentUri

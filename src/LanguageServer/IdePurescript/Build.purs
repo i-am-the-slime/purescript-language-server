@@ -107,20 +107,20 @@ censorWarnings settings = filter (flip notElem codes <<< getCode)
 foreign import parseShellQuote :: String -> Array String
 
 fullBuild :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff (Either String DiagnosticResult)
-fullBuild logCb _ settings state _ = do
+fullBuild notify _ settings state _ = do
   let command = parseShellQuote $ buildCommand settings
   case state, uncons command of
     ServerState { port: maybePort, root: Just directory }, Just { head: cmd, tail: args } -> do
-      build logCb { command: Command cmd args, directory, useNpmDir: addNpmPath settings }
+      build notify { command: Command cmd args, directory, useNpmDir: addNpmPath settings }
         >>= either (pure <<< Left) \{errors} -> do
-          liftEffect $ logCb Info "Build complete"
+          liftEffect $ notify Info "Build complete"
           case maybePort of 
-            Nothing -> liftEffect $ logCb Error $ "Couldn't reload modules, no ide server port"
+            Nothing -> liftEffect $ notify Error $ "Couldn't reload modules, no ide server port"
             Just port -> do
               attempt (loadAll port) >>= case _ of
-                Left e -> liftEffect $ logCb Error $ "Error reloading modules: " <> show e
-                Right (Left msg) -> liftEffect $ logCb Error $ "Error message from IDE server reloading modules: " <> msg
-                _ -> liftEffect $ logCb Info "Reloaded modules"
+                Left e -> liftEffect $ notify Error $ "Error reloading modules: " <> show e
+                Right (Left msg) -> liftEffect $ notify Error $ "Error message from IDE server reloading modules: " <> msg
+                _ -> liftEffect $ notify Info "Reloaded modules"
           liftEffect $ Right <$> convertDiagnostics directory settings errors
     _, Nothing ->
       pure $ Left "Error parsing build command"

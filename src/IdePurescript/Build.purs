@@ -55,18 +55,18 @@ spawn { command: Command cmd args, directory, useNpmDir } = do
   pure { cmdBins, cp }
 
 build :: Notify -> BuildOptions -> Aff (Either String BuildResult)
-build logCb buildOptions@{ command: Command cmd args, directory, useNpmDir } = do
+build notify buildOptions@{ command: Command cmd args } = do
   { cmdBins, cp: cp' } <- spawn buildOptions
   makeAff $ \cb -> do
     let succ = cb <<< Right
         err = cb <<< Left
-    logCb Info $ "Resolved build command (1st is used): "
+    notify Info $ "Resolved build command (1st is used): "
     traverse_ (\(Executable x vv) -> do
-      logCb Info $ x <> maybe "" (": " <> _) vv) cmdBins
+      notify Info $ x <> maybe "" (": " <> _) vv) cmdBins
     case cp' of
       Nothing -> succ $ Left $ "Didn't find command in PATH: " <> cmd
       Just cp -> do
-        logCb Info $ "Running build command: " <> intercalate " " (cmd : args)
+        notify Info $ "Running build command: " <> intercalate " " (cmd : args)
         CP.onError cp (cb <<< Left <<< CP.toStandardError)
         errOutput <- Ref.new ""
         outOutput <- Ref.new ""
@@ -82,7 +82,7 @@ build logCb buildOptions@{ command: Command cmd args, directory, useNpmDir } = d
             pursOutput <- Ref.read (outOutput)
             let lines = split (Pattern "\n") $ pursError <> pursOutput
                 { yes: json, no: toLog } = Array.partition (\s -> indexOf (Pattern "{\"") s == Just 0) lines
-            logCb Info $ joinWith "\n" toLog
+            notify Info $ joinWith "\n" toLog
             case parsePscOutput <$> json of
               [ Left e ] -> succ $ Left $ "Couldn't parse build output: " <> e
               [ Right r ] -> succ $ Right { errors: r, success: n == 0 }

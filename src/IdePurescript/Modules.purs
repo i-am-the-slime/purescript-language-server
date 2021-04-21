@@ -246,7 +246,6 @@ addQualifiedImport state port fileName text moduleName qualifier =
     addImport tmpFile = P.qualifiedImport port tmpFile (Just tmpFile) moduleName qualifier
     isThisModule = Just moduleName == state.main
 
-
 organiseModuleImports :: Notify -> State -> Int -> String -> String
   -> Aff (Maybe { state :: State, result :: String })
 organiseModuleImports log state port fileName text = do
