@@ -8,6 +8,7 @@ import Control.Promise (Promise)
 import Control.Promise as Promise
 import Data.Array (length, (\\))
 import Data.Array as Array
+import Data.DateTime.Instant (Instant, unInstant)
 import Data.Either (Either(..), either, hush)
 import Data.Foldable (for_, or)
 import Data.List (List, (:))
@@ -24,6 +25,7 @@ import Effect.Aff (Aff, Milliseconds(..), apathize, attempt, delay, forkAff, lau
 import Effect.Aff.AVar (AVar)
 import Effect.Aff.AVar as AVar
 import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Now as Instant
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Foreign (Foreign, unsafeToForeign)
@@ -372,17 +374,20 @@ rebuildAndSendDiagnostics ∷
   Ref ServerState ->
   TextDocument ->
   Aff Unit
-rebuildAndSendDiagnostics config connection stateRef document = do
+rebuildAndSendDiagnostics configRef connection stateRef document = do
   let uri = getUri document
-  c <- liftEffect $ Ref.read config
-  s <- liftEffect $ Ref.read stateRef
+  config <- liftEffect $ Ref.read configRef
+  state <- liftEffect $ Ref.read stateRef
   --organizeDiagnostics <- organiseImportsDiagnostic s notify document
-  when (Config.fastRebuild c) do
+  when (Config.fastRebuild config) do
+    -- record start time
+    startedAt <- Instant.now # liftEffect
     log connection "Starting fast rebuild" # liftEffect
     liftEffect $ sendDiagnosticsBegin connection
-    { pscErrors, diagnostics } <- getDiagnostics uri c s
+    { pscErrors, diagnostics, hasErrors } <- getDiagnostics uri config state
     filename <- liftEffect $ uriToFilename uri
     let fileDiagnostics = fromMaybe [] $ Object.lookup filename diagnostics
+    let previousBuildTimes = fromMaybe [] $ Object.lookup filename (un ServerState state).successfulBuildTimes
     liftEffect do
       log connection
         $ "Built with "
@@ -396,12 +401,20 @@ rebuildAndSendDiagnostics config connection stateRef document = do
       let nonFileDiagnostics = Object.delete filename diagnostics
       when (Object.size nonFileDiagnostics > 0) do
         log connection $ "Unmatched diagnostics: " <> show nonFileDiagnostics
+      -- record end time
+      finishedAt <- Instant.now # liftEffect
+      -- take a window of a maximum of the previous five last build times
+      let buildTime = timeDifference startedAt finishedAt
+      let newPreviousBuildTimes = Array.takeEnd 5 (Array.snoc previousBuildTimes buildTime)
       stateRef # write
-        (s # over ServerState
+        (state # over ServerState
             ( \s1 ->
                 s1
                   { diagnostics = Object.insert (un DocumentUri uri) pscErrors (s1.diagnostics)
                   , modulesFile = Nothing -- Force reload of modules on next request
+                  , successfulBuildTimes =
+                    (un ServerState state).successfulBuildTimes
+                      # if hasErrors then identity else Object.insert filename newPreviousBuildTimes
                   }
             )
             
@@ -411,7 +424,13 @@ rebuildAndSendDiagnostics config connection stateRef document = do
         , diagnostics: fileDiagnostics -- <> organizeDiagnostics
         }
       sendDiagnosticsEnd connection
-      log connection $ "Fast rebuild done"
+      log connection $ "Fast rebuild done in " <> show (un Milliseconds buildTime) <> "ms"
+
+timeDifference :: Instant -> Instant -> Milliseconds
+timeDifference start end = do
+  let (Milliseconds msStart) = unInstant start
+  let (Milliseconds msEnd) = unInstant end
+  Milliseconds (msEnd - msStart)
 
 -- | Registers event handlers
 handleEvents ∷
