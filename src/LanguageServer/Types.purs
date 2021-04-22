@@ -365,9 +365,11 @@ newtype FoldingRange = FoldingRange
 type ClientCapabilities = { workspace :: Nullable WorkspaceClientCapabilities, textDocument :: Nullable TextDocumentClientCapabilities }
 type WorkspaceClientCapabilities = { applyEdit :: Nullable Boolean, workspaceEdit :: Nullable WorkspaceEditClientCapabilities }
 
-type TextDocumentClientCapabilities = { codeAction :: Nullable CodeActionClientCapabilities }
+type TextDocumentClientCapabilities = { codeAction :: Nullable CodeActionClientCapabilities, codeLens :: Nullable CodeLensClientCapabilities }
 
 type CodeActionClientCapabilities = { codeActionLiteralSupport :: Nullable { codeActionKind :: { valueSet :: Array CodeActionKind }}, isPreferredSupport :: Nullable Boolean }
+
+type CodeLensClientCapabilities = { dynamicRegistration :: Nullable Boolean }
 
 newtype CodeActionKind = CodeActionKind String
 instance showCodeActionKind :: Show CodeActionKind where

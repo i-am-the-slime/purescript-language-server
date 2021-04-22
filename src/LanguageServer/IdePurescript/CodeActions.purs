@@ -3,7 +3,7 @@ module LanguageServer.IdePurescript.CodeActions where
 import Prelude
 
 import Control.Monad.Except (runExcept)
-import Data.Array (catMaybes, concat, filter, foldl, head, length, mapMaybe, nubByEq, singleton, sortWith, (:))
+import Data.Array (concat, filter, foldl, head, length, mapMaybe, nubByEq, singleton, sortWith, (:))
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Newtype (un)
@@ -60,14 +60,14 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
       
       codeActions <- traverse commandForCode errs
       pure $
-        (map Right $ catMaybes $ map asCommand errs)
-        <> (map Right $ fixAllCommand "Apply all suggestions" $ notImplicitPrelude errs)
+        (Right <$> mapMaybe asCommand errs)
+        <> (Right <$> fixAllCommand "Apply all suggestions" (notImplicitPrelude errs))
         <> (allImportSuggestions $ notImplicitPrelude errs)
-        <> (map Right $ concat codeActions)
+        <> (Right <$> concat codeActions)
         <> organiseImports
     _ -> pure []
   where
-    docUri = _.uri $ un TextDocumentIdentifier textDocument
+    TextDocumentIdentifier { uri: docUri } = textDocument
 
     asCommand error@(RebuildError { position: Just position, errorCode })
       | Just { replacement, range: replaceRange } <- getReplacementRange error

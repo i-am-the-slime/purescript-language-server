@@ -30,6 +30,8 @@ export const onReferences = (conn: Connection) => registerHandler(conn.onReferen
 
 export const onCodeAction = (conn: Connection) => registerHandler(conn.onCodeAction);
 
+export const onCodeLens = (conn: Connection) => registerHandler(conn.onCodeLens);
+
 export const onFoldingRanges = (conn: Connection) => registerHandler(conn.onFoldingRanges);
 
 export const onDocumentFormatting = (conn: Connection) => registerHandler(conn.onDocumentFormatting);
@@ -47,8 +49,6 @@ export const sendDiagnosticsEnd = (conn: Connection) => () => conn.sendNotificat
 export const onExecuteCommand = (conn: Connection) => registerHandler(conn.onExecuteCommand);
 
 export const onDidChangeWatchedFiles = (conn: Connection) => registerNotificationHandler(conn.onDidChangeWatchedFiles);
-
-export const onDidOpenTextDocument = (conn: Connection) => registerNotificationHandler(conn.onDidOpenTextDocument);
 
 export const onExit = (conn: Connection) => registerNotificationHandler0(conn.onExit);
 

@@ -29,7 +29,6 @@ showWarningWithActions :: Connection -> String -> Array String -> Aff (Maybe Str
 showWarningWithActions conn msg acts =
   convertMessageAction <$> (Promise.toAffE $ showWarningWithActionsImpl conn msg (map (\title -> { title }) acts))
 
-
 foreign import showInformation :: Connection -> String -> Effect Unit
 foreign import showInformationWithActionsImpl :: Connection -> String -> Array MessageAction-> Effect (Promise (Nullable MessageAction))
 

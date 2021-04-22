@@ -85,6 +85,7 @@ getDiagnostics uri settings state = do
   case state of
     ServerState { port: Just port, root: Just root } -> do
       { errors, success } <- rebuild port filename targets
+
       liftEffect $ convertDiagnostics root settings errors
     _ -> pure emptyDiagnostics
 

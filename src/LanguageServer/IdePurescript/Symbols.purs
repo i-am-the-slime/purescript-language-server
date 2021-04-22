@@ -33,7 +33,7 @@ convTypePosition (Command.TypePosition {start, end}) = Range { start: convPositi
 
 getDefinition :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams
   -> Aff (Nullable Location)
-getDefinition docs settings state ({ textDocument, position }) = do
+getDefinition docs _ state ({ textDocument, position }) = do
     maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
     case maybeDoc of
       Nothing -> pure Nullable.null
@@ -51,7 +51,7 @@ getDefinition docs settings state ({ textDocument, position }) = do
               _ -> pure $ Nothing
           _, _, _ -> pure $ toNullable Nothing
         where
-        mkRange pos@(Position { line, character }) = Range
+        mkRange pos = Range
             { start: pos # over Position (_ { character = 0 })
             , end: pos # over Position (\c -> c { character = c.character + 100 })
             }
@@ -67,12 +67,11 @@ getDocumentSymbols _ state _ = do
 getWorkspaceSymbols :: Settings -> ServerState -> WorkspaceSymbolParams
   -> Aff (Array SymbolInformation)
 getWorkspaceSymbols _ state { query } = do
-  let { port, root } = un ServerState state
-  case port, root of
-    Just port', Just root'  -> do
-      allModules <- getLoadedModules port'
-      getSymbols root' port' query allModules
-    _, _ -> pure []
+  case state of
+    ServerState { port: Just port, root: Just root } -> do
+      allModules <- getLoadedModules port
+      getSymbols root port query allModules
+    _ -> pure []
 
 getSymbols :: String -> Int -> String -> Array String -> Aff (Array SymbolInformation)
 getSymbols root port prefix modules = do
@@ -82,7 +81,7 @@ getSymbols root port prefix modules = do
   pure $ catMaybes res
 
   where
-  getInfo (Command.TypeInfo { identifier, definedAt: Just typePos, module', type' }) = do
+  getInfo (Command.TypeInfo { identifier, definedAt: Just typePos, module' }) = do
     fileName <- getName typePos
     let kind = if Str.take 1 identifier == (Str.toUpper $ Str.take 1 identifier)
                then ClassSymbolKind

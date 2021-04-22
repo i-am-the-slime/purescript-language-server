@@ -9,7 +9,7 @@ import Foreign (Foreign)
 import Foreign.Object (Object)
 import IdePurescript.Modules (State)
 import LanguageServer.TextDocument (TextDocument)
-import LanguageServer.Types (Connection, DocumentStore, DocumentUri, Settings, ClientCapabilities)
+import LanguageServer.Types (ClientCapabilities, Connection, DocumentStore, DocumentUri, Settings)
 import PscIde.Command (RebuildError)
 
 newtype ServerState = ServerState
@@ -18,6 +18,7 @@ newtype ServerState = ServerState
   , root :: Maybe String
   , connection :: Maybe Connection
   , runningRebuild :: Maybe (Fiber Unit)
+  , previousRebuild :: Maybe { uri :: DocumentUri, content :: String }
   , successfulBuildTimes :: Object (Array Milliseconds)
   , modules :: State
   , modulesFile :: Maybe DocumentUri

@@ -42,7 +42,6 @@ moduleAtPoint line column =
       afterRegex = regex ("^" <> afterPart) noFlags
       wordRange left right = { left: column - left, right: column + right }
       match' r t = either (const Nothing) (\r' -> match r' t) r
-      wr = wordRange 0 0
   in
   case NEA.toArray <$> match' beforeRegex textBefore, NEA.toArray <$> match' afterRegex textAfter of
     Just [_, Just m1], Just [_, Just m2, _] ->

@@ -30,19 +30,17 @@ import Data.Newtype (class Newtype)
 import Data.String (Pattern(Pattern), split)
 import Data.String as String
 import Data.String.Regex (regex) as R
-import Data.String.Regex.Flags (global, noFlags, multiline) as R
+import Data.String.Regex.Flags (multiline, noFlags) as R
 import Data.String.Utils (lines)
 import Data.Tuple (Tuple(..))
-import Data.UUID (genUUID)
-import Effect (Effect)
-import Effect.Aff (Aff, apathize, attempt, bracket)
+import Effect.Aff (Aff, attempt)
 import Effect.Class (liftEffect)
 import Foreign.Object as Object
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
-import IdePurescript.Regex (replace', match', test')
+import IdePurescript.Regex (match', test')
+import LanguageServer.IdePurescript.Util.TemporaryFile (Path, makeTemporaryFile, withTemporaryFile)
 import Node.Encoding (Encoding(..))
 import Node.FS.Aff as FS
-import Node.Path (sep)
 import PscIde as P
 import PscIde.Command (ImportType(..))
 import PscIde.Command as C
@@ -77,7 +75,6 @@ type State =
   , identToModule :: Object.Object Module
   }
 
-type Path = String
 
 getMainModule :: String -> Maybe String
 getMainModule text =
@@ -103,7 +100,7 @@ getModulesForFile port file fullText = do
 
 getModulesForFileTemp :: Int -> Path -> String -> Aff State
 getModulesForFileTemp port file fullText = do
-  tmpFile <- makeTempFile file fullText
+  tmpFile <- makeTemporaryFile file fullText
   res <- getModulesForFile port tmpFile fullText
   _ <- attempt $ FS.unlink tmpFile
   pure res
@@ -153,7 +150,6 @@ findImportInsertPos text =
       res = fromMaybe 0 $ findLastIndex (test' regex) lines
   in res+1
 
-foreign import tmpDir :: Effect String
 
 data ImportResult 
   = UpdatedImports String 
@@ -161,29 +157,16 @@ data ImportResult
   | UnnecessaryImport
   | FailedImport String
 
-makeTempFile :: Path -> String -> Aff Path
-makeTempFile fileName text = do
-  dir <- liftEffect tmpDir
-  uuid <- liftEffect genUUID
-  let name = replace' (R.regex "[\\/\\\\:]" R.global) "-" fileName
-      tmpFile = dir <> sep <> "ide-purescript-" <> show uuid <> "-" <> name
-  FS.writeTextFile UTF8 tmpFile text
-  pure tmpFile
-
 withTempFile :: 
   String -> String -> (String -> Aff (Either String C.ImportResult))
   -> Aff ImportResult
-withTempFile fileName text action = bracket acquire cleanup run
-  where
-  acquire = makeTempFile fileName text
-  run tmpFile = do
-    res <- action tmpFile
-    case res of
+withTempFile fileName text action = withTemporaryFile fileName text \tmpFile -> do
+  res <- action tmpFile
+  case res of
       Right (C.SuccessFile _) -> UpdatedImports <$> FS.readTextFile UTF8 tmpFile
       Right (C.MultipleResults a) -> pure $ AmbiguousImport a
       Right (C.SuccessText st) -> pure (FailedImport (intercalate "\n" st))
       Left err -> pure (FailedImport err)
-  cleanup = apathize <<< FS.unlink
 
 addModuleImport :: 
   State -> Int -> String -> String -> String 

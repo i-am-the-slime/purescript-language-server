@@ -10,7 +10,7 @@ import Data.Nullable (Nullable)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Foreign (Foreign)
-import LanguageServer.Types (CodeActionResult, CompletionItemList, Connection, Diagnostic, DocumentUri, FileEvent, FoldingRange, Hover, Location, Position, Range, SymbolInformation, TextDocumentIdentifier, TextEdit, WorkspaceEdit, MarkupContent)
+import LanguageServer.Types (CodeActionResult, Command, CompletionItemList, Connection, Diagnostic, DocumentUri, FileEvent, FoldingRange, Hover, Location, MarkupContent, Position, Range, SymbolInformation, TextDocumentIdentifier, TextEdit, WorkspaceEdit)
 import Literals.Undefined (Undefined)
 import Type.Row (type (+))
 import Untagged.Union (type (|+|), UndefinedOr)
@@ -35,6 +35,20 @@ type CodeActionParams =
 
 type CodeActionContext =
   { diagnostics ∷ Array Diagnostic }
+type CodeLensParams =
+  { textDocument ∷ TextDocumentIdentifier }
+
+type CodeLensResult =
+  { range ∷ Range 
+  , command :: Nullable Command
+  , data :: Foreign
+  }
+
+-- type CodeLensResolveParams =
+--   { range ∷ Range 
+--   , command :: Nullable Command
+--   , 
+--   }
 
 type FoldingRangesParams =
   { textDocument ∷ TextDocumentIdentifier }
@@ -140,6 +154,10 @@ foreign import onWorkspaceSymbol ∷ Connection -> (WorkspaceSymbolParams -> Res
 foreign import onReferences ∷ Connection -> (ReferenceParams -> Result (Array Location)) -> Effect Unit
 
 foreign import onCodeAction ∷ Connection -> (CodeActionParams -> Result (Array CodeActionResult)) -> Effect Unit
+
+foreign import onCodeLens ∷ Connection -> (CodeLensParams -> Result (Array CodeLensResult)) -> Effect Unit
+
+-- foreign import onCodeLensResolve ∷ Connection -> (CodeActionParams -> Result (Array CodeLensResolveResult)) -> Effect Unit
 
 foreign import onFoldingRanges ∷ Connection -> (FoldingRangesParams -> Result (Array FoldingRange)) -> Effect Unit
 

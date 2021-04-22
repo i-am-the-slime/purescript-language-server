@@ -35,11 +35,12 @@ import IdePurescript.Modules (getModulesForFileTemp, initialModulesState)
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
 import LanguageServer.Console (error, info, log, warn)
 import LanguageServer.DocumentStore (getDocument, onDidChangeContent, onDidOpenDocument, onDidSaveDocument)
-import LanguageServer.Handlers (onCodeAction, onCompletion, onDefinition, onDidChangeConfiguration, onDidChangeWatchedFiles, onDocumentSymbol, onExecuteCommand, onFoldingRanges, onDocumentFormatting, onHover, onReferences, onShutdown, onWorkspaceSymbol, publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
+import LanguageServer.Handlers (onCodeAction, onCodeLens, onCompletion, onDefinition, onDidChangeConfiguration, onDidChangeWatchedFiles, onDocumentFormatting, onDocumentSymbol, onExecuteCommand, onFoldingRanges, onHover, onReferences, onShutdown, onWorkspaceSymbol, publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
 import LanguageServer.IdePurescript.Assist (addClause, caseSplit, fillTypedHole, fixTypo)
 import LanguageServer.IdePurescript.Build (collectByFirst, fullBuild, getDiagnostics)
 import LanguageServer.IdePurescript.ChangeContent (handleDidChangeContent)
 import LanguageServer.IdePurescript.CodeActions (getActions, onReplaceAllSuggestions, onReplaceSuggestion)
+import LanguageServer.IdePurescript.CodeLenses (getCodeLenses)
 import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, typedHoleExplicitCmd)
 import LanguageServer.IdePurescript.Completion (getCompletions)
 import LanguageServer.IdePurescript.Config as Config
@@ -94,6 +95,7 @@ defaultServerState =
     , modulesFile: Nothing
     , buildQueue: Object.empty
     , runningRebuild: Nothing
+    , previousRebuild: Nothing
     , successfulBuildTimes: Object.empty
     , diagnostics: Object.empty
     , clientCapabilities: Nothing
@@ -423,7 +425,6 @@ rebuildAndSendDiagnostics configRef connection stateRef document = do
                       # if hasErrors then identity else Object.insert filename newPreviousBuildTimes
                   }
             )
-            
         )
       publishDiagnostics connection
         { uri
@@ -499,6 +500,11 @@ handleEvents configRef connection stateRef documents notify = do
         "onCodeAction"
         getTextDocUri
         (getActions documents)
+  onCodeLens connection
+    $ runHandler
+        "onCodeLens"
+        getTextDocUri
+        (getCodeLenses stateRef documents)
   onShutdown connection $ Promise.fromAff stopPscIdeServer
   onDidChangeWatchedFiles connection
     $ launchAff_ 
@@ -558,8 +564,8 @@ handleConfig configRef connection stateRef documents cmdLineConfig notify = do
       AVar.read gotConfig
       autoStartPcsIdeServer configRef connection stateRef notify documents
   -- 1. Config on command line - go immediately
-  maybe (pure unit) (setConfig "command line") cmdLineConfig
-  delay (Milliseconds 50.0)
+  for_ cmdLineConfig (setConfig "command line") 
+  delay (50.0 # Milliseconds)
   -- 2. Config may be pushed immediately
   got1 <- AVar.isFilled <$> AVar.status gotConfig
   unless got1 do
@@ -573,7 +579,7 @@ handleConfig configRef connection stateRef documents cmdLineConfig notify = do
           $ "Failed to request settings: " <> show error
         -- 4. Wait some time longer for possible config push, 
         -- then proceed with no config
-        delay (Milliseconds 200.0)
+        delay (200.0 # Milliseconds)
         got2 <- AVar.isFilled <$> AVar.status gotConfig
         unless got2 do
           liftEffect $ notify Warning "Proceeding with no config received"

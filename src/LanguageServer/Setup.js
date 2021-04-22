@@ -20,6 +20,9 @@ exports.initConnection = (commands) => (cb) => () => {
                     resolveProvider: false,
                     triggerCharacters: ["."]
                 },
+                codeLensProvider: {
+                    resolveProvider: false
+                },
                 hoverProvider: true,
                 signatureHelpProvider: {
                     triggerCharacters: [" "],
