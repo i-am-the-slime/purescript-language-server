@@ -13,13 +13,13 @@ import Effect.Class (liftEffect)
 import IdePurescript.Modules (getQualModule, getUnqualActiveModules)
 import IdePurescript.PscIde (getTypeInfo)
 import IdePurescript.Tokens (identifierAtPoint)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (ReferenceParams)
-import LanguageServer.IdePurescript.Symbols (convPosition)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (ReferenceParams)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.TextDocument (getTextAtRange)
-import LanguageServer.Types (DocumentStore, Location(..), Position(..), Range(..), Settings, TextDocumentIdentifier(..))
-import LanguageServer.Uri (filenameToUri)
+import LanguageServer.IdePurescript.Util.Position (convertTypePosition)
+import LanguageServer.Protocol.TextDocument (getTextAtRange)
+import LanguageServer.Protocol.Types (DocumentStore, Location(..), Position(..), Range(..), Settings, TextDocumentIdentifier(..))
+import LanguageServer.Protocol.Uri (filenameToUri)
 import Node.Path (resolve)
 import PscIde (usages)
 import PscIde.Command (Namespace(..))
@@ -27,14 +27,14 @@ import PscIde.Command as Command
 
 getReferences :: DocumentStore -> Settings -> ServerState -> ReferenceParams
   -> Aff (Array Location)
-getReferences docs settings state ({ textDocument, position }) = do
+getReferences docs _ state ({ textDocument, position }) = do
     maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
     case maybeDoc of
       Nothing -> pure []
       Just doc -> do
         text <- liftEffect $ getTextAtRange doc (mkRange position)
-        let { port, modules, root } = un ServerState $ state
-        case port, root, identifierAtPoint text (_.character $ un Position position) of
+        let { pscIdePort, modules, root } = un ServerState $ state
+        case pscIdePort, root, identifierAtPoint text (_.character $ un Position position) of
           Just port', Just root', Just { word, qualifier } -> do
             info <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
             case info of
@@ -53,14 +53,14 @@ getReferences docs settings state ({ textDocument, position }) = do
 
 
     convLocation :: String -> Command.TypePosition -> Effect Location
-    convLocation root (Command.TypePosition {start, end, name }) = do
+    convLocation root typePosition@(Command.TypePosition { name }) = do
       uri <- filenameToUri =<< resolve [ root ] name
-      pure $ Location
+      pure $ Location 
         { uri
-        , range: Range { start: convPosition start, end: convPosition end }
+        , range: convertTypePosition typePosition
         }
 
-    mkRange pos@(Position { line, character }) = Range
+    mkRange pos = Range
         { start: pos # over Position (_ { character = 0 })
         , end: pos # over Position (\c -> c { character = c.character + 100 })
         }

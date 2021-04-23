@@ -17,15 +17,15 @@ import IdePurescript.Completion (declarationTypeToNamespace)
 import IdePurescript.PscIde (eitherToErr)
 import IdePurescript.PscIdeServer (Notify)
 import IdePurescript.Tokens (containsArrow, identifierAtPoint, startsWithCapitalLetter)
-import LanguageServer.Console (log)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (applyEdit)
+import LanguageServer.Protocol.Console (log)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (applyEdit)
 import LanguageServer.IdePurescript.Commands as Commands
 import LanguageServer.IdePurescript.Imports (addCompletionImport, addCompletionImport', addCompletionImportEdit, showNS)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Text (makeWorkspaceEdit)
-import LanguageServer.TextDocument (getText, getTextAtRange, getVersion)
-import LanguageServer.Types (Command, DocumentStore, DocumentUri(..), Position(..), Range(..), Settings, readRange)
+import LanguageServer.Protocol.Text (makeWorkspaceEdit)
+import LanguageServer.Protocol.TextDocument (getText, getTextAtRange, getVersion)
+import LanguageServer.Protocol.Types (Command, DocumentStore, DocumentUri(..), Position(..), Range(..), Settings, readRange)
 import PscIde (defaultCompletionOptions, suggestTypos)
 import PscIde as P
 import PscIde.Command (DeclarationType(..), TypeInfo(..), declarationTypeFromString, declarationTypeToString)
@@ -41,9 +41,9 @@ lineRange pos = Range
 
 caseSplit :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 caseSplit docs _ state args = do
-  let ServerState { port, connection, clientCapabilities } = state
-  case port, connection, args of
-    Just port', Just connection', [ argUri, argLine, argChar, argType ]
+  let ServerState { pscIdePort, connection, clientCapabilities } = state
+  case pscIdePort, connection, args of
+    Just port, Just connection', [ argUri, argLine, argChar, argType ]
         | Right uri <- runExcept $ readString argUri
         , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
         , Right char <- runExcept $ readInt argChar
@@ -57,7 +57,7 @@ caseSplit docs _ state args = do
                 version <- liftEffect $ getVersion doc
                 case identifierAtPoint lineText char of
                     Just { range: { left, right } } -> do
-                        lines <- eitherToErr $ P.caseSplit port' lineText left right false tyStr
+                        lines <- eitherToErr $ P.caseSplit port lineText left right false tyStr
                         let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
                         void $ applyEdit connection' edit
                     _ -> do liftEffect $ log connection' "fail identifier"
@@ -71,9 +71,9 @@ caseSplit docs _ state args = do
 
 addClause :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Unit
 addClause docs _ state args = do
-  let ServerState { port, connection, clientCapabilities } = state
-  case port, connection, args of
-    Just port', Just connection', [ argUri, argLine, argChar ]
+  let ServerState { pscIdePort, connection, clientCapabilities } = state
+  case pscIdePort, connection, args of
+    Just port, Just connection', [ argUri, argLine, argChar ]
         | Right uri <- runExcept $ readString argUri
         , Right line <- runExcept $ readInt argLine -- TODO: Can this be a Position?
         , Right char <- runExcept $ readInt argChar
@@ -87,7 +87,7 @@ addClause docs _ state args = do
                 version <- liftEffect $ getVersion doc
                 case identifierAtPoint lineText char of
                     Just _ -> do
-                        lines <- eitherToErr $ P.addClause port' lineText false
+                        lines <- eitherToErr $ P.addClause port lineText false
                         let edit = makeWorkspaceEdit clientCapabilities (DocumentUri uri) version (lineRange' line char) $ intercalate "\n" $ map trim lines
                         void $ applyEdit connection' edit
                     _ -> pure unit
@@ -113,9 +113,9 @@ decodeTypoResult obj = do
   pure $ TypoResult { identifier, mod , declarationType }
 
 fixTypoActions :: DocumentStore -> Settings -> ServerState -> DocumentUri -> Int -> Int -> Aff (Array Command)
-fixTypoActions docs _ (ServerState { port, modules }) docUri line char =
-  case port of
-    Just port' -> do
+fixTypoActions docs _ (ServerState { pscIdePort, modules }) docUri line char =
+  case pscIdePort of
+    Just port -> do
       maybeDoc <- liftEffect $ getDocument docs docUri
       case maybeDoc of 
         Nothing -> mempty
@@ -124,7 +124,7 @@ fixTypoActions docs _ (ServerState { port, modules }) docUri line char =
           case identifierAtPoint lineText char of
             Nothing -> pure []
             Just { word } -> do
-              res <- suggestTypos port' word 2 modules.main defaultCompletionOptions
+              res <- suggestTypos port word 2 modules.main defaultCompletionOptions
               pure $ case res of 
                 Left _ -> []
                 Right infos ->

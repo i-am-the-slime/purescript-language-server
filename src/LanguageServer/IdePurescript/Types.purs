@@ -8,12 +8,12 @@ import Effect.Aff (Aff, Fiber, Milliseconds)
 import Foreign (Foreign)
 import Foreign.Object (Object)
 import IdePurescript.Modules (State)
-import LanguageServer.TextDocument (TextDocument)
-import LanguageServer.Types (ClientCapabilities, Connection, DocumentStore, DocumentUri, Settings)
+import LanguageServer.Protocol.TextDocument (TextDocument)
+import LanguageServer.Protocol.Types (ClientCapabilities, Connection, DocumentStore, DocumentUri, Settings)
 import PscIde.Command (RebuildError)
 
 newtype ServerState = ServerState
-  { port :: Maybe Int
+  { pscIdePort :: Maybe Int
   , deactivate :: Aff Unit
   , root :: Maybe String
   , connection :: Maybe Connection

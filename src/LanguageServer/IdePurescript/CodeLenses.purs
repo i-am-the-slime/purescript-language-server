@@ -8,11 +8,11 @@ import Effect.Aff (Aff, attempt, joinFiber, message)
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import LanguageServer.Console (log)
-import LanguageServer.Handlers (CodeLensParams, CodeLensResult)
+import LanguageServer.Protocol.Console (log)
+import LanguageServer.Protocol.Handlers (CodeLensParams, CodeLensResult)
 import LanguageServer.IdePurescript.CodeLens.TopLevelDeclarations (topLevelDeclarationCodeLenses)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Types (DocumentStore, Settings, TextDocumentIdentifier(..))
+import LanguageServer.Protocol.Types (DocumentStore, Settings, TextDocumentIdentifier(..))
 
 getCodeLenses ∷ Ref ServerState -> DocumentStore -> Settings -> ServerState -> CodeLensParams -> Aff (Array CodeLensResult)
 getCodeLenses stateRef _ _ _ { textDocument: TextDocumentIdentifier { uri } } = do

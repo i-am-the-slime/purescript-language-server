@@ -13,15 +13,15 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Foreign (Foreign)
 import IdePurescript.Tokens (startsWithCapitalLetter)
-import LanguageServer.Console (log)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (DidChangeWatchedFilesParams, applyEdit)
+import LanguageServer.Protocol.Console (log)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (DidChangeWatchedFilesParams, applyEdit)
 import LanguageServer.IdePurescript.Assist (lineRange')
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Text (makeWorkspaceEdit)
-import LanguageServer.TextDocument (getText, getVersion)
-import LanguageServer.Types (Connection, DocumentStore, DocumentUri(..), FileChangeType(..), FileEvent(..), fromFileChangeTypeCode)
+import LanguageServer.Protocol.Text (makeWorkspaceEdit)
+import LanguageServer.Protocol.TextDocument (getText, getVersion)
+import LanguageServer.Protocol.Types (Connection, DocumentStore, DocumentUri(..), FileChangeType(..), FileEvent(..), fromFileChangeTypeCode)
 
 handleDidChangeWatchedFiles ∷
   Ref Foreign ->

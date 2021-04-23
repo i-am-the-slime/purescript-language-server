@@ -1,4 +1,4 @@
-module LanguageServer.Types where
+module LanguageServer.Protocol.Types where
 
 import Prelude
 
@@ -10,8 +10,9 @@ import Data.Lens.Iso.Newtype (_Newtype)
 import Data.Lens.Record (prop)
 import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.Newtype (class Newtype, over)
-import Data.NonEmpty (foldl1, (:|))
+import Data.NonEmpty ((:|))
 import Data.Nullable (Nullable, toMaybe, toNullable)
+import Data.Semigroup.Foldable (foldl1)
 import Data.Symbol (SProxy(..))
 import Data.Tuple (Tuple(..))
 import Foreign (F, Foreign, readInt)
@@ -37,7 +38,7 @@ derive instance newtypeDocumentUri :: Newtype DocumentUri _
 
 newtype DocumentUri = DocumentUri String
 instance showDocumentUri :: Show DocumentUri where
-  show (DocumentUri uri) = "DocumentUri " <> show uri
+  show (DocumentUri rawUri) = "DocumentUri " <> show rawUri
 
 derive newtype instance eqDocumentUri :: Eq DocumentUri
 
@@ -49,20 +50,19 @@ character = _Newtype <<< prop (SProxy :: _ "character")
 line :: Lens' Position Int
 line = _Newtype <<< prop (SProxy :: _ "line")
 
-instance eqPosition :: Eq Position where
-  eq (Position { line, character }) (Position { line: line', character: character'}) = line == line' && character == character'
+derive instance eqPosition :: Eq Position 
 
 instance positionOrd :: Ord Position where
-  compare (Position { line: line, character: character }) (Position { line: line', character: character' })
-    | line < line' = LT
-    | line == line' && character < character' = LT
-    | line == line' && character == character' = EQ
+  compare (Position p1) (Position p2)
+    | p1.line < p2.line = LT
+    | p1.line == p2.line && p1.character < p2.character = LT
+    | p1.line == p2.line && p1.character == p2.character = EQ
     | otherwise = GT
 
 derive instance newtypePosition :: Newtype Position _
 
 instance showPosition :: Show Position where
-  show (Position { line, character }) = "Position(" <> show line <> "," <> show character <> ")"
+  show (Position p) = "Position(" <> show p.line <> "," <> show p.character <> ")"
 
 newtype Range = Range { start :: Position, end :: Position }
 
@@ -89,10 +89,10 @@ readRange r = do
   end <- r ! "end" >>= readPosition
   pure $ Range { start, end }
   where
-  readPosition p = do
-    line <- p ! "line" >>= readInt
-    character <- p ! "character" >>= readInt
-    pure $ Position { line, character }
+  readPosition p = ado
+    l <- p ! "line" >>= readInt
+    c <- p ! "character" >>= readInt
+    in Position { line: l, character: c }
 
 newtype Location = Location { uri :: DocumentUri, range :: Range }
 
@@ -308,14 +308,14 @@ workspaceEdit capabilities edits = WorkspaceEdit
       else
         Just $
           Object.fromFoldable $
-          map (\(h :| t) -> Tuple (uri h) (concat $ edit h : map edit t) ) $
+          map (\(h :| t) -> Tuple (getUri h) (concat $ getEdit h : map getEdit t) ) $
             map toNonEmpty $
-            groupBy (\a b -> uri a == uri b) $ sortWith uri edits
+            groupBy (\a b -> getUri a == getUri b) $ sortWith getUri edits
   }
   where
   useDocumentChanges = supportsDocumentChanges capabilities
-  uri (TextDocumentEdit { textDocument: TextDocumentIdentifier { uri: DocumentUri uri' } }) = uri'
-  edit (TextDocumentEdit { edits: edits' }) = edits'
+  getUri (TextDocumentEdit { textDocument: TextDocumentIdentifier { uri: DocumentUri docUri } }) = docUri
+  getEdit (TextDocumentEdit tde) = tde.edits
 
 supportsDocumentChanges ::  Maybe ClientCapabilities -> Boolean
 supportsDocumentChanges Nothing = false

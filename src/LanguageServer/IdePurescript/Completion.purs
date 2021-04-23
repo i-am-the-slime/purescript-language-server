@@ -16,17 +16,17 @@ import IdePurescript.Completion (SuggestionResult(..), SuggestionType(..), getSu
 import IdePurescript.Modules (State, getAllActiveModules, getModuleFromUnknownQualifier, getModuleName, getQualModule, getUnqualActiveModules)
 import IdePurescript.Modules as Modules
 import IdePurescript.PscIde (getLoadedModules)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (TextDocumentPositionParams)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (TextDocumentPositionParams)
 import LanguageServer.IdePurescript.Commands (addCompletionImport)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.Imports (showNS)
 import LanguageServer.IdePurescript.SuggestionRank (Ranking(..), cmapRanking)
 import LanguageServer.IdePurescript.SuggestionRank as SuggestionRank
 import LanguageServer.IdePurescript.Types (ServerState)
-import LanguageServer.TextDocument (getTextAtRange)
-import LanguageServer.Types (CompletionItem(..), DocumentStore, Position(..), Range(..), Settings, TextDocumentIdentifier(..), TextEdit(..), completionItem, CompletionItemList(..), markupContent)
-import LanguageServer.Types as LS
+import LanguageServer.Protocol.TextDocument (getTextAtRange)
+import LanguageServer.Protocol.Types (CompletionItem(..), DocumentStore, Position(..), Range(..), Settings, TextDocumentIdentifier(..), TextEdit(..), completionItem, CompletionItemList(..), markupContent)
+import LanguageServer.Protocol.Types as LS
 
 getCompletions :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams -> Aff CompletionItemList
 getCompletions docs settings state ({ textDocument, position }) = do
@@ -37,10 +37,10 @@ getCompletions docs settings state ({ textDocument, position }) = do
       Just doc -> do
         line <- liftEffect $ getTextAtRange doc (mkRange position)
         let autoCompleteAllModules = Config.autoCompleteAllModules settings
-            { port, modules } = unwrap state
+            { pscIdePort, modules } = unwrap state
             getQualifiedModule = (flip getQualModule) modules
 
-        case port of
+        case pscIdePort of
             Just port' ->  do
                 usedModules <- if autoCompleteAllModules
                     then getLoadedModules port'

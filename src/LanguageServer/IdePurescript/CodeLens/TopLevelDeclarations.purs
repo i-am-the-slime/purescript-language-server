@@ -1,6 +1,7 @@
 module LanguageServer.IdePurescript.CodeLens.TopLevelDeclarations where
 
 import Prelude
+
 import Data.Array (mapMaybe)
 import Data.Foldable (fold)
 import Data.Maybe (Maybe(..))
@@ -10,42 +11,46 @@ import Effect.Aff (Aff)
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import LanguageServer.Handlers (CodeLensResult)
+import LanguageServer.Protocol.Handlers (CodeLensResult)
 import LanguageServer.IdePurescript.Commands (cmdName, replaceSuggestionCmd)
-import LanguageServer.Types (Command(..), DocumentUri(..), Position(..), Range(..))
+import LanguageServer.IdePurescript.Util.Position (convertRangePosition)
+import LanguageServer.Protocol.Types (Command(..), DocumentUri(..))
 import PscIde.Command (PscSuggestion(..), RebuildError(..))
 
 topLevelDeclarationCodeLenses ∷
   Object (Array RebuildError) -> DocumentUri -> Aff (Array CodeLensResult)
-topLevelDeclarationCodeLenses diagnostics uri = do
+topLevelDeclarationCodeLenses diagnostics uri = ado
   let fileDiagnostics = Object.lookup (un DocumentUri uri) diagnostics # fold
-  pure $ codeLenses fileDiagnostics uri
+  in codeLenses uri fileDiagnostics
 
-codeLenses ∷
-  Array RebuildError ->
-  DocumentUri ->
-  Array CodeLensResult
-codeLenses diagnostics docUri =
-  diagnostics
-    # mapMaybe case _ of
-        RebuildError
-          { suggestion: Just (PscSuggestion { replacement: signature, replaceRange: Just range })
-        , errorCode: "MissingTypeDeclaration"
-        } ->
-            Just
-              { range: Range { start: Position { line: range.startLine-1, character: range.startColumn }, end: Position { line: range.endLine-1, character: range.endColumn } }
-              , command:
-                Nullable.notNull
-                  $ Command
-                      { command: cmdName replaceSuggestionCmd
-                      , title: signature
-                      , arguments:
-                        Nullable.notNull
-                          [ unsafeToForeign docUri
-                          , unsafeToForeign signature
-                          , unsafeToForeign range
-                          ]
-                      }
-              , data: (Nullable.null # unsafeToForeign)
-              }
-        _ -> Nothing
+codeLenses ∷ DocumentUri -> Array RebuildError -> Array CodeLensResult
+codeLenses docUri =
+  mapMaybe case _ of
+    RebuildError
+    { errorCode: "MissingTypeDeclaration"
+    , suggestion:
+      Just
+      ( PscSuggestion
+        { replacement: signature, replaceRange: Just range }
+      )
+    } -> Just (mkCodeLensResult range signature)
+    _ -> Nothing
+  where
+  mkCodeLensResult rangePosition signature = do
+    let range = convertRangePosition rangePosition
+    { range
+    , command: Nullable.notNull (mkReplaceCommand signature range)
+    , data: (Nullable.null # unsafeToForeign)
+    }
+
+  mkReplaceCommand signature range =
+    Command
+      { command: cmdName replaceSuggestionCmd
+      , title: signature
+      , arguments:
+        Nullable.notNull
+          [ unsafeToForeign docUri
+          , unsafeToForeign signature
+          , unsafeToForeign range
+          ]
+      }

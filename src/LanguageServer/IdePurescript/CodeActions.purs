@@ -22,17 +22,17 @@ import Foreign.Internal.Stringify (unsafeStringify)
 import Foreign.Object as Object
 import IdePurescript.QuickFix (getReplacement, getTitle, isImport, isUnknownToken)
 import IdePurescript.Regex (replace')
-import LanguageServer.Console as LanguageServerConsole
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (CodeActionParams, applyEdit)
 import LanguageServer.IdePurescript.Assist (fixTypoActions)
-import LanguageServer.IdePurescript.Build (positionToRange)
 import LanguageServer.IdePurescript.Commands (Replacement, build, replaceAllSuggestions, replaceSuggestion, typedHole)
 import LanguageServer.IdePurescript.Commands as Commands
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Text (makeWorkspaceEdit)
-import LanguageServer.TextDocument (TextDocument, getTextAtRange, getVersion)
-import LanguageServer.Types (ClientCapabilities, CodeAction(..), CodeActionKind(..), CodeActionResult, Command(..), DocumentStore, DocumentUri(DocumentUri), Position(Position), Range(Range), Settings, TextDocumentEdit(..), TextDocumentIdentifier(TextDocumentIdentifier), TextEdit(..), codeActionEmpty, codeActionResult, readRange, workspaceEdit)
+import LanguageServer.IdePurescript.Util.Position (convertRangePosition)
+import LanguageServer.Protocol.Console as LanguageServerConsole
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (CodeActionParams, applyEdit)
+import LanguageServer.Protocol.Text (makeWorkspaceEdit)
+import LanguageServer.Protocol.TextDocument (TextDocument, getTextAtRange, getVersion)
+import LanguageServer.Protocol.Types (ClientCapabilities, CodeAction(..), CodeActionKind(..), CodeActionResult, Command(..), DocumentStore, DocumentUri(DocumentUri), Position(Position), Range(Range), Settings, TextDocumentEdit(..), TextDocumentIdentifier(TextDocumentIdentifier), TextEdit(..), codeActionEmpty, codeActionResult, readRange, workspaceEdit)
 import PscIde.Command (PscSuggestion(..), PursIdeInfo(..), RebuildError(..))
 
 m :: forall a. Nullable a -> Maybe a
@@ -71,7 +71,7 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
 
     asCommand error@(RebuildError { position: Just position, errorCode })
       | Just { replacement, range: replaceRange } <- getReplacementRange error
-      , intersects (positionToRange position) range = do
+      , intersects (convertRangePosition position) range = do
       Just $ replaceSuggestion (getTitle errorCode) docUri replacement replaceRange
     asCommand _ = Nothing
 
@@ -80,7 +80,7 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
     getReplacementRange (RebuildError { position: Just position, suggestion: Just (PscSuggestion { replacement, replaceRange }) }) =
       Just $ { replacement, range: range' }
       where
-      range' = positionToRange $ fromMaybe position replaceRange
+      range' = convertRangePosition $ fromMaybe position replaceRange
     getReplacementRange _ = Nothing
 
     notImplicitPrelude = filter (\(RebuildError { errorCode, message }) -> not (errorCode == "ImplicitImport" && String.contains (Pattern "Module Prelude") message))
@@ -106,12 +106,12 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
         = x:acc
       go acc _ = acc
 
-    commandForCode err@(RebuildError { position: Just position, errorCode }) | intersects (positionToRange position) range =
+    commandForCode err@(RebuildError { position: Just position, errorCode }) | intersects (convertRangePosition position) range =
       case errorCode of
         "ModuleNotFound" -> pure [ build ]
         "HoleInferredType" -> case err of
           RebuildError { pursIde: Just (PursIdeInfo { name, completions }) } ->
-            pure $ singleton $ typedHole name docUri (positionToRange position) completions
+            pure $ singleton $ typedHole name docUri (convertRangePosition position) completions
           _ -> pure []
         x | isUnknownToken x
           , { startLine, startColumn } <- position ->

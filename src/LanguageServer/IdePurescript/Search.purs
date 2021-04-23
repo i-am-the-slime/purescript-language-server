@@ -13,7 +13,7 @@ import Foreign.Index ((!))
 import IdePurescript.Modules (getQualModule)
 import IdePurescript.PscIde (getCompletion', getLoadedModules)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Types (DocumentStore, Settings)
+import LanguageServer.Protocol.Types (DocumentStore, Settings)
 import PscIde as P
 import PscIde.Command (TypeInfo(..))
 import PscIde.Command as C
@@ -32,10 +32,10 @@ decodeSearchResult obj = do
 
 search :: DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
 search docs config state args = case state, runExcept $ traverse readString args of 
-  ServerState { port: Just port, modules }, Right [ text ] -> do
-    loadedModules <- getLoadedModules port
+  ServerState { pscIdePort: Just pscIdePort, modules }, Right [ text ] -> do
+    loadedModules <- getLoadedModules pscIdePort
     let getQualifiedModule = (flip getQualModule) modules
-    results <- getCompletion' (Just $ C.Flex text) [] port modules.main Nothing loadedModules getQualifiedModule P.defaultCompletionOptions
+    results <- getCompletion' (Just $ C.Flex text) [] pscIdePort modules.main Nothing loadedModules getQualifiedModule P.defaultCompletionOptions
     pure $ unsafeToForeign $ toResult <$> results
   _, _ -> pure $ unsafeToForeign []
 

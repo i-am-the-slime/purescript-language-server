@@ -13,12 +13,12 @@ import Effect.Exception (catchException, error)
 import Effect.Ref as Ref
 import IdePurescript.Build (Command(..), spawn)
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (DocumentFormattingParams)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (DocumentFormattingParams)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.TextDocument (getText)
-import LanguageServer.Types (DocumentStore, Position(..), Range(..), Settings, TextDocumentIdentifier(..), TextEdit(..))
+import LanguageServer.Protocol.TextDocument (getText)
+import LanguageServer.Protocol.Types (DocumentStore, Position(..), Range(..), Settings, TextDocumentIdentifier(..), TextEdit(..))
 import Node.ChildProcess as CP
 import Node.Encoding (Encoding(..))
 import Node.Encoding as Encoding

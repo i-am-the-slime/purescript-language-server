@@ -16,22 +16,22 @@ import Foreign (Foreign, readString, unsafeToForeign)
 import IdePurescript.Modules (ImportResult(..), addExplicitImport, addModuleImport, addQualifiedImport, organiseModuleImports)
 import IdePurescript.PscIde (getAvailableModules)
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (applyEdit)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (applyEdit)
 import LanguageServer.IdePurescript.Config (autocompleteAddImport, preludeModule)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.Text (makeMinimalWorkspaceEdit)
-import LanguageServer.TextDocument (TextDocument, getText, getVersion)
-import LanguageServer.Types (DocumentStore, DocumentUri(DocumentUri), Settings, WorkspaceEdit)
-import LanguageServer.Uri (uriToFilename)
-import LanguageServer.Window as Window
+import LanguageServer.Protocol.Text (makeMinimalWorkspaceEdit)
+import LanguageServer.Protocol.TextDocument (TextDocument, getText, getVersion)
+import LanguageServer.Protocol.Types (DocumentStore, DocumentUri(DocumentUri), Settings, WorkspaceEdit)
+import LanguageServer.Protocol.Uri (uriToFilename)
+import LanguageServer.Protocol.Window as Window
 import PscIde.Command as C
 
 addCompletionImport :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
 addCompletionImport = addCompletionImport' mempty
 
 addCompletionImport' :: WorkspaceEdit -> Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-addCompletionImport' existingEdit log docs config state@(ServerState { port, modules, connection }) args = do
+addCompletionImport' existingEdit log docs config state@(ServerState { connection }) args = do
   let shouldAddImport = autocompleteAddImport config
   case connection, (runExcept <<< readString) <$> args, shouldAddImport of
     Just conn', [ Right identifier, mod, qual, Right uriRaw, Right ns ], true -> do
@@ -78,11 +78,11 @@ showNS C.NSType = "NSType"
 addCompletionImportEdit :: Notify -> DocumentStore -> Settings -> ServerState
  -> CompletionImportArgs -> TextDocument -> Number -> String -> Maybe C.Namespace
  -> Aff (Either Foreign (Array WorkspaceEdit))
-addCompletionImportEdit log docs config state@(ServerState { port, modules, connection, clientCapabilities }) { identifier, mod, qual, uri } doc version text ns = do
+addCompletionImportEdit log _ config (ServerState { pscIdePort, modules, connection, clientCapabilities }) { identifier, mod, qual, uri } _ version text ns = do
   let prelude = preludeModule config
-  case port of
+  case pscIdePort of
     Just port' -> do
-      { state: modulesState', result } <-
+      { result } <-
         case mod, qual of
           Just mod', Just qual' | noModule (isSameQualified mod' qual') ->
             addQualifiedImport modules port' (un DocumentUri uri) text mod' qual'
@@ -123,10 +123,10 @@ addCompletionImportEdit log docs config state@(ServerState { port, modules, conn
       _ -> false
 
 addModuleImport' :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-addModuleImport' log docs config state args = do
-  let ServerState { port, modules, connection, clientCapabilities } = state
-  case port, (runExcept <<< readString) <$> args of
-    Just port', [ Right mod', qual', Right uri ] -> do
+addModuleImport' log docs _ state args = do
+  let ServerState { pscIdePort, modules, connection, clientCapabilities } = state
+  case pscIdePort, (runExcept <<< readString) <$> args of
+    Just port', [ Right mod', _, Right uri ] -> do
       maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
       case maybeDoc of
         Nothing -> mempty
@@ -153,18 +153,18 @@ addModuleImport' log docs config state args = do
     successResult = unsafeToForeign $ toNullable Nothing
 
 getAllModules :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-getAllModules log docs config state args =
+getAllModules log _ _ state _ =
   case state of
-    ServerState { port: Just port, modules, connection } ->
-      unsafeToForeign <$> getAvailableModules port
+    ServerState { pscIdePort: Just pscIdePort } ->
+      unsafeToForeign <$> getAvailableModules pscIdePort
     _ -> do
       liftEffect $ log Error "Fail case"
       pure $ unsafeToForeign []
 
 organiseImports :: Notify -> DocumentStore -> Settings -> ServerState -> Array Foreign -> Aff Foreign
-organiseImports log docs config state args = do
-  let ServerState { port, modules, connection, clientCapabilities } = state
-  case port, (runExcept <<< readString) <$> args of
+organiseImports log docs _ state args = do
+  let ServerState { pscIdePort, modules, connection, clientCapabilities } = state
+  case pscIdePort, (runExcept <<< readString) <$> args of
     Just port', [ Right uri ] -> do
       maybeDoc <- liftEffect $ getDocument docs (DocumentUri uri)
       case maybeDoc of 

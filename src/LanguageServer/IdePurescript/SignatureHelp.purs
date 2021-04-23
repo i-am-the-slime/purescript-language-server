@@ -37,13 +37,13 @@ import Foreign.Object (Object)
 import IdePurescript.Modules (Module, getQualModule, getUnqualActiveModules)
 import IdePurescript.PscIde (getTypeInfo)
 import IdePurescript.Tokens (identifierAtPoint)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (Offsets, ParameterInformation, SignatureHelp(..), SignatureHelpParams, mkOffsets)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (Offsets, ParameterInformation, SignatureHelp(..), SignatureHelpParams, mkOffsets)
 import LanguageServer.IdePurescript.SignatureHelp.Types (State)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.TextDocument (getTextAtRange)
-import LanguageServer.Types (DocumentStore, Position(..), Range(..), Settings, character, endPosition, markupContent, uri)
-import LanguageServer.Window (showError)
+import LanguageServer.Protocol.TextDocument (getTextAtRange)
+import LanguageServer.Protocol.Types (DocumentStore, Position(..), Range(..), Settings, character, endPosition, markupContent, uri)
+import LanguageServer.Protocol.Window (showError)
 import PscIde.Command as C
 import PureScript.CST (RecoveredParserResult(..), parseExpr, parseType)
 import PureScript.CST.Errors (ParseError(..), printParseError)
@@ -83,7 +83,7 @@ mkGetSignatureHelp :: Effect (DocumentStore -> Foreign -> ServerState -> Signatu
 mkGetSignatureHelp = Ref.new Nothing <#> getSignatureHelp
 
 getSignatureHelp ∷ Ref (Maybe State) -> DocumentStore -> Settings -> ServerState -> SignatureHelpParams -> Aff (Nullable SignatureHelp)
-getSignatureHelp stateRef docs settings (ServerState serverState) params = do
+getSignatureHelp stateRef docs _ (ServerState serverState) params = do
   result <- runExceptT go
   liftEffect case serverState.connection, result of
     Nothing, _ -> pure Nullable.null
@@ -92,10 +92,9 @@ getSignatureHelp stateRef docs settings (ServerState serverState) params = do
   where
   go ∷ ExceptT String Aff SignatureHelp
   go = do
-    port <- serverState.port # orElse "No Port"
+    port <- serverState.pscIdePort # orElse "No Port"
     let modules = serverState.modules
-    let connection = serverState.connection
-    context@{ triggerKind } <- params.context # uorToMaybe # orElse "No context"
+    context <- params.context # uorToMaybe # orElse "No context"
     let helpIsActive = fromMaybe false (uorToMaybe context.activeSignatureHelp)
     if not helpIsActive then do
       startSignatureHelp stateRef docs port modules params
@@ -103,7 +102,7 @@ getSignatureHelp stateRef docs settings (ServerState serverState) params = do
       continueSignatureHelp stateRef docs port modules params
 
 continueSignatureHelp ∷ Ref (Maybe State) -> DocumentStore -> Int -> _ -> SignatureHelpParams -> ExceptT String Aff SignatureHelp
-continueSignatureHelp stateRef docs port modules params@{ textDocument } = do
+continueSignatureHelp stateRef docs _ _ params@{ textDocument } = do
   storedLoc <- Ref.read stateRef # liftEffect >>= orElse "no previous state"
   let stored = Zipper.value storedLoc
   let end = max params.position stored.maxPosition
@@ -116,8 +115,6 @@ continueSignatureHelp stateRef docs port modules params@{ textDocument } = do
       rangeIndex <- findArgumentIndex params.position storedLoc relevantText
       inRangeIndex <- MZ.guard (rangeIndex < NonEmptyArray.length stored.parameters) $> rangeIndex
       pure (stored.previousResponse # activeParameter .~ inRangeIndex)
-  where
-  dropSuffix p s = String.stripSuffix p s # fromMaybe s
 
 findArgumentIndex ∷ Position -> State -> String -> ExceptT String Aff Int
 findArgumentIndex paramsPosition storedLoc relevantText = do
@@ -281,11 +278,7 @@ typeInfoToSignatureHelp word (C.TypeInfo { type', expandedType, documentation })
       Just { signatureHelp, signature, parameters }
   where
   typeStr = "```purescript\n" <> compactTypeStr -- <> (if showExpanded then "\n" <> expandedTypeStr else "") <> "\n```"
-
-
   compactTypeStr = word <> " :: " <> type'
-
-  expandedTypeStr = word <> " :: " <> (fromMaybe "" expandedType)
 
 -- | Turns an array of string types into their offsets required by the LSP
 -- | to highlight the currently active argument in Signature help

@@ -18,11 +18,11 @@ import Effect.Class (liftEffect)
 import IdePurescript.Modules (getQualModule, getUnqualActiveModules)
 import IdePurescript.PscIde (getTypeInfo)
 import IdePurescript.Tokens (WordRange, identPart, identifierAtPoint)
-import LanguageServer.DocumentStore (getDocument)
-import LanguageServer.Handlers (TextDocumentPositionParams)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (TextDocumentPositionParams)
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.TextDocument (getTextAtRange)
-import LanguageServer.Types (DocumentStore, Hover(Hover), Position(Position), Range(Range), Settings, TextDocumentIdentifier(TextDocumentIdentifier), markupContent)
+import LanguageServer.Protocol.TextDocument (getTextAtRange)
+import LanguageServer.Protocol.Types (DocumentStore, Hover(Hover), Position(Position), Range(Range), Settings, TextDocumentIdentifier(TextDocumentIdentifier), markupContent)
 import PscIde.Command as C
 
 moduleBeforePart :: String
@@ -49,16 +49,16 @@ moduleAtPoint line column =
     _, _ -> Nothing
 
 getTooltips :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams -> Aff (Nullable Hover)
-getTooltips docs settings state ({ textDocument, position }) = do
+getTooltips docs _ state ({ textDocument, position }) = do
   maybeDoc <- liftEffect $ getDocument docs (_.uri $ un TextDocumentIdentifier textDocument)
   case maybeDoc of 
     Nothing -> pure Nullable.null
     Just doc -> do
       text <- liftEffect $ getTextAtRange doc $ lineRange position
-      let { port, modules, connection } = un ServerState state
+      let { pscIdePort, modules } = un ServerState state
           char = _.character $ un Position $ position
-      case port, identifierAtPoint text char, moduleAtPoint text char of
-        Just port', _, Just { word, range } -> do
+      case pscIdePort, identifierAtPoint text char, moduleAtPoint text char of
+        Just _, _, Just { word, range } -> do
           let mod = getQualModule word (un ServerState state).modules
           pure $ toNullable $ case uncons mod of 
             Just { head } -> 
@@ -67,8 +67,8 @@ getTooltips docs settings state ({ textDocument, position }) = do
               , range: toNullable $ Just $ wordRange position range
               }
             _ -> Nothing
-        Just port', Just { word, qualifier }, _ -> do
-          ty <- getTypeInfo port' word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
+        Just pscIdePort, Just { word, qualifier }, _ -> do
+          ty <- getTypeInfo pscIdePort word modules.main qualifier (getUnqualActiveModules modules $ Just word) (flip getQualModule modules)
           pure $ toNullable $ map (convertInfo word) ty
         _, _, _-> pure $ toNullable Nothing
 

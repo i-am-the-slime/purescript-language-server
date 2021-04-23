@@ -10,10 +10,10 @@ import Data.Array (length, (\\))
 import Data.Array as Array
 import Data.DateTime.Instant (Instant, unInstant)
 import Data.Either (Either(..), either, hush)
-import Data.Foldable (for_, or)
+import Data.Foldable (for_, or, fold)
 import Data.List (List, (:))
 import Data.List as List
-import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing, maybe, maybe')
+import Data.Maybe (Maybe(..), isJust, isNothing, maybe, maybe')
 import Data.Newtype (over, un)
 import Data.Nullable as Nullable
 import Data.Profunctor.Strong (first)
@@ -33,9 +33,9 @@ import Foreign.Object (Object)
 import Foreign.Object as Object
 import IdePurescript.Modules (getModulesForFileTemp, initialModulesState)
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
-import LanguageServer.Console (error, info, log, warn)
-import LanguageServer.DocumentStore (getDocument, onDidChangeContent, onDidOpenDocument, onDidSaveDocument)
-import LanguageServer.Handlers (onCodeAction, onCodeLens, onCompletion, onDefinition, onDidChangeConfiguration, onDidChangeWatchedFiles, onDocumentFormatting, onDocumentSymbol, onExecuteCommand, onFoldingRanges, onHover, onReferences, onShutdown, onWorkspaceSymbol, publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
+import LanguageServer.Protocol.Console (error, info, log, warn)
+import LanguageServer.Protocol.DocumentStore (getDocument, onDidChangeContent, onDidOpenDocument, onDidSaveDocument)
+import LanguageServer.Protocol.Handlers (onCodeAction, onCodeLens, onCompletion, onDefinition, onDidChangeConfiguration, onDidChangeWatchedFiles, onDocumentFormatting, onDocumentSymbol, onExecuteCommand, onFoldingRanges, onHover, onReferences, onShutdown, onWorkspaceSymbol, publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
 import LanguageServer.IdePurescript.Assist (addClause, caseSplit, fillTypedHole, fixTypo)
 import LanguageServer.IdePurescript.Build (collectByFirst, fullBuild, getDiagnostics)
 import LanguageServer.IdePurescript.ChangeContent (handleDidChangeContent)
@@ -54,11 +54,11 @@ import LanguageServer.IdePurescript.Symbols (getDefinition, getDocumentSymbols, 
 import LanguageServer.IdePurescript.Tooltips (getTooltips)
 import LanguageServer.IdePurescript.Types (ServerState(..), CommandHandler)
 import LanguageServer.IdePurescript.WatchedFiles (handleDidChangeWatchedFiles)
-import LanguageServer.Setup (InitParams(..), getConfiguration, initConnection, initDocumentStore)
-import LanguageServer.TextDocument (TextDocument, getText, getUri)
-import LanguageServer.Types (Connection, Diagnostic, DocumentStore, DocumentUri(..), Settings, TextDocumentIdentifier(..))
-import LanguageServer.Uri (filenameToUri, uriToFilename)
-import LanguageServer.Window (showError, showWarningWithActions)
+import LanguageServer.Protocol.Setup (InitParams(..), getConfiguration, initConnection, initDocumentStore)
+import LanguageServer.Protocol.TextDocument (TextDocument, getText, getUri)
+import LanguageServer.Protocol.Types (Connection, Diagnostic, DocumentStore, DocumentUri(..), Settings, TextDocumentIdentifier(..))
+import LanguageServer.Protocol.Uri (filenameToUri, uriToFilename)
+import LanguageServer.Protocol.Window (showError, showWarningWithActions)
 import Node.Encoding as Encoding
 import Node.FS.Aff as FS
 import Node.FS.Sync as FSSync
@@ -87,7 +87,7 @@ main = do
 defaultServerState ∷ ServerState
 defaultServerState =
   ServerState
-    { port: Nothing
+    { pscIdePort: Nothing
     , deactivate: pure unit
     , root: Nothing
     , connection: Nothing
@@ -129,7 +129,7 @@ updateModules ∷
 updateModules stateRef documents uri = do
   currentState <- read stateRef
   case currentState of
-    ServerState { port: Just port, modulesFile }
+    ServerState { pscIdePort: Just port, modulesFile }
       | modulesFile /= Just uri -> do
         maybeDoc <- getDocument documents uri # liftEffect
         case maybeDoc of 
@@ -194,7 +194,7 @@ mkStopPscIdeServer stateRef notify = do
   ServerState { deactivate } <- read stateRef
   deactivate
   do
-    modify_ (over ServerState $ _ { port = Nothing, deactivate = pure unit }) stateRef
+    modify_ (over ServerState $ _ { pscIdePort = Nothing, deactivate = pure unit }) stateRef
     notify Success "Stopped IDE server"
 
 -- | Reads workspace root from state
@@ -212,8 +212,8 @@ getWorkspaceRoot stateRef = do
 getPort ∷ ∀ eff. MonadEffect eff => Ref ServerState -> eff (Maybe Int)
 getPort stateRef =
   liftEffect ado
-    ServerState { port } <- Ref.read stateRef
-    in port
+    ServerState { pscIdePort } <- Ref.read stateRef
+    in pscIdePort
 
 -- | Builds documents in queue (which where opened on server startup)
 buildDocumentsInQueue ∷
@@ -236,8 +236,8 @@ mkStartPscIdeServer config connection stateRef notify = do
   settings <- liftEffect $ Ref.read config
   startRes <- Server.startServer' settings rootPath notify notify
   Server.retry notify 6 case startRes of
-    { port: Just port, quit } -> do
-      Server.loadAll port
+    { port: Just pscIdePort, quit } -> do
+      Server.loadAll pscIdePort
         >>= case _ of
             Left msg ->
               liftEffect
@@ -247,7 +247,7 @@ mkStartPscIdeServer config connection stateRef notify = do
             _ -> pure unit
       liftEffect
         $ Ref.modify_
-            (over ServerState $ _ { port = Just port, deactivate = quit })
+            (over ServerState $ _ { pscIdePort = Just pscIdePort, deactivate = quit })
             stateRef
     _ -> pure unit
   liftEffect $ buildDocumentsInQueue config connection stateRef
@@ -394,8 +394,8 @@ rebuildAndSendDiagnostics configRef connection stateRef document = do
     liftEffect $ sendDiagnosticsBegin connection
     { pscErrors, diagnostics, hasErrors } <- getDiagnostics uri config state
     filename <- liftEffect $ uriToFilename uri
-    let fileDiagnostics = fromMaybe [] $ Object.lookup filename diagnostics
-    let previousBuildTimes = fromMaybe [] $ Object.lookup filename (un ServerState state).successfulBuildTimes
+    let fileDiagnostics = Object.lookup filename diagnostics # fold
+    let previousBuildTimes = Object.lookup filename (un ServerState state).successfulBuildTimes # fold
     liftEffect do
       log connection
         $ "Built with "

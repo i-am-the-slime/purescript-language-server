@@ -1,4 +1,4 @@
-module LanguageServer.Handlers where
+module LanguageServer.Protocol.Handlers where
 
 import Prelude
 
@@ -10,7 +10,7 @@ import Data.Nullable (Nullable)
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Foreign (Foreign)
-import LanguageServer.Types (CodeActionResult, Command, CompletionItemList, Connection, Diagnostic, DocumentUri, FileEvent, FoldingRange, Hover, Location, MarkupContent, Position, Range, SymbolInformation, TextDocumentIdentifier, TextEdit, WorkspaceEdit)
+import LanguageServer.Protocol.Types (CodeActionResult, Command, CompletionItemList, Connection, Diagnostic, DocumentUri, FileEvent, FoldingRange, Hover, Location, MarkupContent, Position, Range, SymbolInformation, TextDocumentIdentifier, TextEdit, WorkspaceEdit)
 import Literals.Undefined (Undefined)
 import Type.Row (type (+))
 import Untagged.Union (type (|+|), UndefinedOr)
