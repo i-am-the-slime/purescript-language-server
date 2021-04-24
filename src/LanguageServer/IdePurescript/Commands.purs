@@ -85,6 +85,12 @@ searchCmd = CommandInfo "Search identifiers" "search"
 fixTypoCmd :: CommandInfo
 fixTypoCmd = CommandInfo "Fix typo/add import" "fixTypo"
 
+addSpagoDependencyCmd :: CommandInfo
+addSpagoDependencyCmd = CommandInfo "Add a spago dependency" "addSpagoDependency"
+
+listPackageSetPackagesCmd :: CommandInfo
+listPackageSetPackagesCmd = CommandInfo "List all packages in the package set" "listPackageSetPackages"
+
 fixTypo :: DocumentUri -> Int -> Int -> Command
 fixTypo uri row char = c fixTypoCmd $ Just $ [ unsafeToForeign uri, unsafeToForeign row, unsafeToForeign char ] 
 
@@ -107,5 +113,7 @@ commands = cmdName <$>
   , typedHoleExplicitCmd
   , replaceAllSuggestionsCmd
   , fixTypoCmd
+  , addSpagoDependencyCmd
+  , listPackageSetPackagesCmd
   ]
 

@@ -2,11 +2,11 @@ module LanguageServer.IdePurescript.Completion where
 
 import Prelude
 
-import Data.Array (filter, mapMaybe)
+import Data.Array (filter, intercalate, mapMaybe)
 import Data.Array (length, null) as Arr
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
-import Data.Newtype (over, un, unwrap)
+import Data.Newtype (over, unwrap)
 import Data.Nullable (toNullable)
 import Data.String (Pattern(..), Replacement(..), indexOf, joinWith, length, replaceAll, split, toUpper)
 import Data.String.Utils (toCharArray)
@@ -16,21 +16,21 @@ import IdePurescript.Completion (SuggestionResult(..), SuggestionType(..), getSu
 import IdePurescript.Modules (State, getAllActiveModules, getModuleFromUnknownQualifier, getModuleName, getQualModule, getUnqualActiveModules)
 import IdePurescript.Modules as Modules
 import IdePurescript.PscIde (getLoadedModules)
-import LanguageServer.Protocol.DocumentStore (getDocument)
-import LanguageServer.Protocol.Handlers (TextDocumentPositionParams)
 import LanguageServer.IdePurescript.Commands (addCompletionImport)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.Imports (showNS)
 import LanguageServer.IdePurescript.SuggestionRank (Ranking(..), cmapRanking)
 import LanguageServer.IdePurescript.SuggestionRank as SuggestionRank
 import LanguageServer.IdePurescript.Types (ServerState)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (TextDocumentPositionParams)
 import LanguageServer.Protocol.TextDocument (getTextAtRange)
 import LanguageServer.Protocol.Types (CompletionItem(..), DocumentStore, Position(..), Range(..), Settings, TextDocumentIdentifier(..), TextEdit(..), completionItem, CompletionItemList(..), markupContent)
 import LanguageServer.Protocol.Types as LS
 
 getCompletions :: DocumentStore -> Settings -> ServerState -> TextDocumentPositionParams -> Aff CompletionItemList
 getCompletions docs settings state ({ textDocument, position }) = do
-    let uri = _.uri $ un TextDocumentIdentifier textDocument
+    let TextDocumentIdentifier { uri } = textDocument
     maybeDoc <- liftEffect $ getDocument docs uri
     case maybeDoc of 
       Nothing -> pure $ result []
@@ -62,7 +62,7 @@ getCompletions docs settings state ({ textDocument, position }) = do
         { items: arr
         , isIncomplete: Config.autocompleteLimit settings == Just (Arr.length arr)
         }
-    mkRange pos@(Position { line, character }) = Range
+    mkRange pos = Range
         { start: pos # over Position (_ { character = 0 })
         , end: pos
         }
@@ -98,6 +98,7 @@ getCompletions docs settings state ({ textDocument, position }) = do
           , command = toNullable $ Just $ addCompletionImport identifier (Just exportMod) qualifier uri (maybe "" showNS namespace)
           , textEdit = toNullable $ Just $ edit identifier prefix
           , sortText = toNullable $ Just $ rankText <> "." <> identifier
+          , label = identifier <> "\t" <> intercalate "." exportedFrom  <> ""
           })
         where
         exportText = "\n*From: " <> (if exportMod == origMod then origMod else exportMod <> " (re-exported from " <> origMod <> ")") <> "*"

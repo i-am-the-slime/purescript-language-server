@@ -70,6 +70,9 @@ autoStartPscIde = getBoolean "autoStartPscIde" true
 autocompleteAddImport :: ConfigFn Boolean
 autocompleteAddImport = getBoolean "autocompleteAddImport" true
 
+downsortImportSuggestions :: ConfigFn (Array String)
+downsortImportSuggestions = getConfig (readArray >=> traverse readString) "downsortImportSuggestions" []
+
 autocompleteGrouped :: ConfigFn Boolean
 autocompleteGrouped = getBoolean "autocompleteGrouped" false
 

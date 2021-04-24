@@ -27,6 +27,7 @@ You can edit this file as you like.
   , "foreign-generic"
   , "foreign-object"
   , "integers"
+  , "justifill"
   , "language-cst-parser"
   , "lists"
   , "literals"
@@ -40,7 +41,9 @@ You can edit this file as you like.
   , "node-process"
   , "node-streams"
   , "nonempty"
+  , "now"
   , "nullable"
+  , "posix-types"
   , "prelude"
   , "profunctor"
   , "profunctor-lenses"
@@ -57,8 +60,6 @@ You can edit this file as you like.
   , "unsafe-coerce"
   , "untagged-union"
   , "uuid"
-  , "now"
-  , "posix-types"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "test/**/*.purs" ]
