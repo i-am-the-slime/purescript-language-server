@@ -37,10 +37,11 @@ import Foreign.Object (Object)
 import IdePurescript.Modules (Module, getQualModule, getUnqualActiveModules)
 import IdePurescript.PscIde (getTypeInfo)
 import IdePurescript.Tokens (identifierAtPoint)
-import LanguageServer.Protocol.DocumentStore (getDocument)
-import LanguageServer.Protocol.Handlers (Offsets, ParameterInformation, SignatureHelp(..), SignatureHelpParams, mkOffsets)
 import LanguageServer.IdePurescript.SignatureHelp.Types (State)
 import LanguageServer.IdePurescript.Types (ServerState(..))
+import LanguageServer.IdePurescript.Util.CST (sourceRangeToRange)
+import LanguageServer.Protocol.DocumentStore (getDocument)
+import LanguageServer.Protocol.Handlers (Offsets, ParameterInformation, SignatureHelp(..), SignatureHelpParams, mkOffsets)
 import LanguageServer.Protocol.TextDocument (getTextAtRange)
 import LanguageServer.Protocol.Types (DocumentStore, Position(..), Range(..), Settings, character, endPosition, markupContent, uri)
 import LanguageServer.Protocol.Window (showError)
@@ -179,16 +180,6 @@ getExpression text = case parseExpr text of
 -- , position :: SourcePos
 -- , tokens :: Array SourceToken
 -- }
-sourceRangeToRange ∷ CST.SourceRange -> Range
-sourceRangeToRange sr =
-  Range
-    { start: sourcePosToPosition sr.start
-    , end: sourcePosToPosition sr.end
-    }
-
--- SourcePos are 0 based 
-sourcePosToPosition ∷ CST.SourcePos -> Position
-sourcePosToPosition { line, column } = Position { line: line + 1, character: column + 1 }
 
 -- 
 toAbsoluteRange ∷ Position -> Range -> Range

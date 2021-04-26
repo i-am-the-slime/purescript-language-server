@@ -2,18 +2,20 @@ module LanguageServer.IdePurescript.CodeLens.TopLevelDeclarations where
 
 import Prelude
 
-import Data.Array (mapMaybe)
+import Data.Array (mapMaybe, mapWithIndex)
 import Data.Foldable (fold)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Nullable as Nullable
+import Data.String (joinWith)
+import Data.String.Utils as String
 import Effect.Aff (Aff)
 import Foreign (unsafeToForeign)
 import Foreign.Object (Object)
 import Foreign.Object as Object
-import LanguageServer.Protocol.Handlers (CodeLensResult)
 import LanguageServer.IdePurescript.Commands (cmdName, replaceSuggestionCmd)
 import LanguageServer.IdePurescript.Util.Position (convertRangePosition)
+import LanguageServer.Protocol.Handlers (CodeLensResult)
 import LanguageServer.Protocol.Types (Command(..), DocumentUri(..))
 import PscIde.Command (PscSuggestion(..), RebuildError(..))
 
@@ -21,18 +23,19 @@ topLevelDeclarationCodeLenses ∷
   Object (Array RebuildError) -> DocumentUri -> Aff (Array CodeLensResult)
 topLevelDeclarationCodeLenses diagnostics uri = ado
   let fileDiagnostics = Object.lookup (un DocumentUri uri) diagnostics # fold
-  in codeLenses uri fileDiagnostics
+  let addTypeDefinitions = addTypeDefinitionCodeLenses uri fileDiagnostics
+  in addTypeDefinitions
 
-codeLenses ∷ DocumentUri -> Array RebuildError -> Array CodeLensResult
-codeLenses docUri =
+addTypeDefinitionCodeLenses ∷ DocumentUri -> Array RebuildError -> Array CodeLensResult
+addTypeDefinitionCodeLenses docUri =
   mapMaybe case _ of
     RebuildError
-    { errorCode: "MissingTypeDeclaration"
+      { errorCode: "MissingTypeDeclaration"
     , suggestion:
       Just
       ( PscSuggestion
         { replacement: signature, replaceRange: Just range }
-      )
+    )
     } -> Just (mkCodeLensResult range signature)
     _ -> Nothing
   where
@@ -50,7 +53,12 @@ codeLenses docUri =
       , arguments:
         Nullable.notNull
           [ unsafeToForeign docUri
-          , unsafeToForeign signature
+          , unsafeToForeign (ensureSpaceAfterFirstLine signature)
           , unsafeToForeign range
           ]
       }
+
+ensureSpaceAfterFirstLine ∷ String -> String
+ensureSpaceAfterFirstLine = String.lines >>> mapWithIndex prependSpaceIfNecessary >>> joinWith "\n"
+  where
+  prependSpaceIfNecessary i s = if i == 0 || String.startsWith " " s then s else " " <> s

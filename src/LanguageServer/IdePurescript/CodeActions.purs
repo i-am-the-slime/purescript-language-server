@@ -27,6 +27,7 @@ import LanguageServer.IdePurescript.Commands (Replacement, build, replaceAllSugg
 import LanguageServer.IdePurescript.Commands as Commands
 import LanguageServer.IdePurescript.Types (ServerState(..))
 import LanguageServer.IdePurescript.Util.Position (convertRangePosition)
+import LanguageServer.Protocol.Console (log)
 import LanguageServer.Protocol.Console as LanguageServerConsole
 import LanguageServer.Protocol.DocumentStore (getDocument)
 import LanguageServer.Protocol.Handlers (CodeActionParams, applyEdit)
@@ -168,8 +169,10 @@ onReplaceSuggestion docs _ (ServerState { connection, clientCapabilities }) args
 
             -- TODO: Check original & expected text ?
             void $ applyEdit conn' edit
+    Just conn', _ -> do
+      let message = "Invalid arguments to onReplaceSuggestion: " <> unsafeStringify args
+      log conn' message # liftEffect
     _, _ -> pure unit
-
 
 getReplacementEdit :: TextDocument -> Replacement -> Aff TextEdit
 getReplacementEdit doc { replacement, range } = do

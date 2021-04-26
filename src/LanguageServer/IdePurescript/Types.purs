@@ -7,7 +7,7 @@ import Data.Newtype (class Newtype)
 import Effect.Aff (Aff, Fiber, Milliseconds)
 import Foreign (Foreign)
 import Foreign.Object (Object)
-import IdePurescript.Modules (State)
+import IdePurescript.Modules as Modules
 import LanguageServer.Protocol.TextDocument (TextDocument)
 import LanguageServer.Protocol.Types (ClientCapabilities, Connection, DocumentStore, DocumentUri, Settings)
 import PscIde.Command (RebuildError)
@@ -20,7 +20,7 @@ newtype ServerState = ServerState
   , runningRebuild :: Maybe (Fiber Unit)
   , previousRebuild :: Maybe { uri :: DocumentUri, content :: String }
   , successfulBuildTimes :: Object (Array Milliseconds)
-  , modules :: State
+  , modules :: Modules.State
   , modulesFile :: Maybe DocumentUri
   , buildQueue :: Object TextDocument
   , diagnostics :: Object (Array RebuildError)

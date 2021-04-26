@@ -108,7 +108,7 @@ rebuildFile stateRef config state conn uri previousBuildTimes realFilename tmpFi
     sendDiagnosticsBegin conn # liftEffect
     Milliseconds finishedAt <- Instant.now <#> unInstant # liftEffect
     let buildTime = Milliseconds $ finishedAt - startedAt
-    showWarning conn ("Rebuild took " <> show (un Milliseconds buildTime) <> "ms " <> String.takeRight 20 (unsafeStringify uri))
+    -- showWarning conn ("Rebuild took " <> show (un Milliseconds buildTime) <> "ms " <> String.takeRight 20 (unsafeStringify uri))
     let
       newSuccessfulBuildTimes =
         -- errors usually get reported quickly so we exclude them 

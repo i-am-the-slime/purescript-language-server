@@ -98,7 +98,7 @@ getCompletions docs settings state ({ textDocument, position }) = do
           , command = toNullable $ Just $ addCompletionImport identifier (Just exportMod) qualifier uri (maybe "" showNS namespace)
           , textEdit = toNullable $ Just $ edit identifier prefix
           , sortText = toNullable $ Just $ rankText <> "." <> identifier
-          , label = identifier <> "\t" <> intercalate "." exportedFrom  <> ""
+          , label = identifier <> "\t\t" <> intercalate "." exportedFrom  <> ""
           })
         where
         exportText = "\n*From: " <> (if exportMod == origMod then origMod else exportMod <> " (re-exported from " <> origMod <> ")") <> "*"
