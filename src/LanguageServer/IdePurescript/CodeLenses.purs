@@ -5,6 +5,7 @@ import Prelude
 import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
+import Data.Monoid (guard)
 import Effect.Aff (Aff, attempt, joinFiber, message)
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
@@ -32,7 +33,7 @@ getCodeLenses stateRef documentStore _ _ { textDocument: TextDocumentIdentifier 
     Nothing -> run
   where
   run = do
-    ServerState { diagnostics, connection } <- Ref.read stateRef # liftEffect
+    ServerState { diagnostics, connection, showExportManagementCodeLenses } <- Ref.read stateRef # liftEffect
     topLevelDeclarations <- topLevelDeclarationCodeLenses diagnostics uri
-    exportManagement  <- exportManagementCodeLenses connection documentStore uri
+    exportManagement  <- guard showExportManagementCodeLenses $ exportManagementCodeLenses connection documentStore uri
     pure $ topLevelDeclarations <> exportManagement 

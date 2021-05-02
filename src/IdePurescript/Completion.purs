@@ -113,7 +113,7 @@ getSuggestions port
 
     parsed = case match' moduleRegex line of
         Just [ Just _, mod, tok ] | mod /= Nothing || tok /= Nothing ->
-          Just { mod, token: fromMaybe "" tok}
+          Just { mod, token: fromMaybe "" tok }
         _ -> Nothing
 
     modResult prefix moduleName = ModuleSuggestion { text: moduleName, suggestType: Module, prefix }

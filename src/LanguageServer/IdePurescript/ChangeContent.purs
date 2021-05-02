@@ -1,6 +1,7 @@
 module LanguageServer.IdePurescript.ChangeContent where
 
 import Prelude
+
 import Control.Alt ((<|>))
 import Data.Array (length)
 import Data.Array as Array
@@ -9,7 +10,6 @@ import Data.Foldable (for_)
 import Data.Int (odd)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (over, un)
-import Data.String.CodeUnits as String
 import Data.Time.Duration (Seconds(..), fromDuration)
 import Data.Time.Duration as Milliseconds
 import Effect (Effect)
@@ -20,15 +20,14 @@ import Effect.Now as Instant
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Foreign (Foreign)
-import Foreign.Internal.Stringify (unsafeStringify)
 import Foreign.Object as Object
-import LanguageServer.Protocol.Console (log)
-import LanguageServer.Protocol.DocumentStore (TextDocumentChangeEvent)
-import LanguageServer.Protocol.Handlers (publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
 import LanguageServer.IdePurescript.Build (getDiagnosticsForTmpFile)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.Types (ServerState(..))
-import LanguageServer.IdePurescript.Util.TemporaryFile (withTemporaryFile)
+import LanguageServer.IdePurescript.Util.TemporaryFile (withTemporaryFFIFile)
+import LanguageServer.Protocol.Console (log)
+import LanguageServer.Protocol.DocumentStore (TextDocumentChangeEvent)
+import LanguageServer.Protocol.Handlers (publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
 import LanguageServer.Protocol.TextDocument (TextDocument, getText, getUri)
 import LanguageServer.Protocol.Types (Connection, DocumentUri(..))
 import LanguageServer.Protocol.Uri (uriToFilename)
@@ -80,10 +79,6 @@ liveRebuild config connection stateRef uri restartPscIdeServer document realFile
 
 compileFile ∷ Foreign -> Connection -> Ref ServerState -> ServerState -> TextDocument -> Aff Unit -> DocumentUri -> String -> Array Milliseconds -> Aff Unit
 compileFile config conn stateRef state document restartPscIdeServer uri realFilename previousBuildTimes = do
-  -- [TODO]: 
-  -- Reorder the function definitions intelligently in such a way that wherever
-  -- the latest change happened is the first function
-  -- 
   Aff.delay (Config.rebuildFrequency config)
   textContent <- liftEffect $ getText document
   let
@@ -94,7 +89,7 @@ compileFile config conn stateRef state document restartPscIdeServer uri realFile
   when textDidChange do
     -- create a copy of the file so that we can check it with
     -- purs ide without having to save the current document
-    withTemporaryFile realFilename textContent \tmpFilename -> do
+    withTemporaryFFIFile realFilename textContent \{ pursFilePath: tmpFilename } -> do
       let rebuild = rebuildFile stateRef config state conn uri previousBuildTimes realFilename tmpFilename textContent
       let kill = killServer conn stateRef restartPscIdeServer state previousBuildTimes realFilename
       Aff.sequential (Aff.parallel rebuild <|> Aff.parallel kill)

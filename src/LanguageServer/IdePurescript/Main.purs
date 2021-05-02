@@ -97,7 +97,9 @@ defaultServerState =
     , buildQueue: Object.empty
     , runningRebuild: Nothing
     , previousRebuild: Nothing
+    , parseResults: Object.empty
     , successfulBuildTimes: Object.empty
+    , showExportManagementCodeLenses: false
     , diagnostics: Object.empty
     , clientCapabilities: Nothing
     }

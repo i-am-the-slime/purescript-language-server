@@ -1,4 +1,9 @@
-module IdePurescript.Exec where
+module IdePurescript.Exec (
+    addNpmBinPath
+  , findBins
+  , getPathVar
+  )
+  where
 
 import Prelude
 

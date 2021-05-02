@@ -1,4 +1,37 @@
-module LanguageServer.IdePurescript.Commands where
+module LanguageServer.IdePurescript.Commands (
+    CommandInfo
+  , Replacement
+  , addClauseCmd
+  , addCompletionImport
+  , addCompletionImportCmd
+  , addModuleImportCmd
+  , addSpagoDependencyCmd
+  , build
+  , buildCmd
+  , c
+  , caseSplitCmd
+  , cmdName
+  , commands
+  , fixTypo
+  , fixTypo'
+  , fixTypoCmd
+  , getAvailableModulesCmd
+  , listPackageSetPackagesCmd
+  , organiseImports
+  , organiseImportsCmd
+  , replaceAllSuggestions
+  , replaceAllSuggestionsCmd
+  , replaceSuggestion
+  , replaceSuggestionCmd
+  , restartPscIdeCmd
+  , searchCmd
+  , startPscIdeCmd
+  , stopPscIdeCmd
+  , typedHole
+  , typedHoleCmd
+  , typedHoleExplicitCmd
+  )
+  where
 
 import Prelude
 

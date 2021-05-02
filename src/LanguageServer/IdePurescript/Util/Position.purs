@@ -42,8 +42,7 @@ shiftPositionRight :: Int -> LSP.Position -> LSP.Position
 shiftPositionRight by = over _character (_ + by)
 
 shiftPositionLeft :: Int -> LSP.Position -> LSP.Position
-shiftPositionLeft by = over _character (_ + by)
-
+shiftPositionLeft = negate >>> shiftPositionRight
 
 convertPosition ∷ PscIde.Position -> LSP.Position
 convertPosition { line, column } =
