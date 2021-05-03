@@ -30,6 +30,7 @@ module LanguageServer.IdePurescript.Commands (
   , typedHole
   , typedHoleCmd
   , typedHoleExplicitCmd
+  , toggleExportManagementCmd
   )
   where
 
@@ -118,6 +119,9 @@ searchCmd = CommandInfo "Search identifiers" "search"
 fixTypoCmd :: CommandInfo
 fixTypoCmd = CommandInfo "Fix typo/add import" "fixTypo"
 
+toggleExportManagementCmd :: CommandInfo
+toggleExportManagementCmd = CommandInfo "Toggle export management code lenses" "toggleExportManagement"
+
 addSpagoDependencyCmd :: CommandInfo
 addSpagoDependencyCmd = CommandInfo "Add a spago dependency" "addSpagoDependency"
 
@@ -148,5 +152,6 @@ commands = cmdName <$>
   , fixTypoCmd
   , addSpagoDependencyCmd
   , listPackageSetPackagesCmd
+  , toggleExportManagementCmd
   ]
 

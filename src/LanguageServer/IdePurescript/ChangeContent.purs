@@ -1,7 +1,9 @@
-module LanguageServer.IdePurescript.ChangeContent where
+module LanguageServer.IdePurescript.ChangeContent (
+    handleDidChangeContent
+  )
+  where
 
 import Prelude
-
 import Control.Alt ((<|>))
 import Data.Array (length)
 import Data.Array as Array
@@ -28,10 +30,11 @@ import LanguageServer.IdePurescript.Util.TemporaryFile (withTemporaryFFIFile)
 import LanguageServer.Protocol.Console (log)
 import LanguageServer.Protocol.DocumentStore (TextDocumentChangeEvent)
 import LanguageServer.Protocol.Handlers (publishDiagnostics, sendDiagnosticsBegin, sendDiagnosticsEnd)
-import LanguageServer.Protocol.TextDocument (TextDocument, getText, getUri)
+import LanguageServer.Protocol.TextDocument (TextDocument, getText, getUri, getVersion)
 import LanguageServer.Protocol.Types (Connection, DocumentUri(..))
 import LanguageServer.Protocol.Uri (uriToFilename)
 import LanguageServer.Protocol.Window (showInformation, showWarning)
+import PureScript.CST (parseModule)
 
 handleDidChangeContent ∷
   Ref Foreign ->
@@ -43,20 +46,30 @@ handleDidChangeContent ∷
   Effect Unit
 handleDidChangeContent configRef connection stateRef restartPscIdeServer launchAffLog { document } = do
   let uri = getUri document
-  config <- Ref.read configRef # liftEffect
-  state <- Ref.read stateRef # liftEffect
-  filename <- uriToFilename uri # liftEffect
+  config <- Ref.read configRef
+  state <- Ref.read stateRef
+  filename <- uriToFilename uri
   let previousBuildTimes = fromMaybe [] (Object.lookup filename (un ServerState state).successfulBuildTimes)
+  parseAndStoreResult stateRef document 
   if Config.liveRebuild config && (not isTooSlow previousBuildTimes) then
     liveRebuild config connection stateRef uri restartPscIdeServer document filename previousBuildTimes launchAffLog
   else
     invalidateModulesFile stateRef
 
+parseAndStoreResult :: Ref ServerState -> TextDocument -> Effect Unit
+parseAndStoreResult stateRef document = do
+  let (DocumentUri rawUri) = getUri document
+  version <- getVersion document
+  textContent <- liftEffect $ getText document
+  let result = parseModule textContent
+  let modification s = s { parseResults = (s.parseResults # Object.insert rawUri { version, result }) }
+  stateRef # Ref.modify_ ( over ServerState modification ) # liftEffect
+
 invalidateModulesFile ∷ Ref ServerState -> Effect Unit
 invalidateModulesFile = Ref.modify_ (over ServerState (_ { modulesFile = Nothing }))
 
-debounceMessage :: String
-debounceMessage ="Debounced build"
+debounceMessage ∷ String
+debounceMessage = "Debounced build"
 
 liveRebuild ∷ Foreign -> Connection -> Ref ServerState -> DocumentUri -> Aff Unit -> TextDocument -> String -> Array Milliseconds -> (Aff Unit -> Effect (Fiber Unit)) -> Effect Unit
 liveRebuild config connection stateRef uri restartPscIdeServer document realFilename previousBuildTimes launchAffLog = do

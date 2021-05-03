@@ -27,9 +27,11 @@ newtype ServerState = ServerState
   , modulesFile :: Maybe DocumentUri
   , buildQueue :: Object TextDocument
   , diagnostics :: Object (Array RebuildError)
-  , parseResults :: Object { version :: Number, result :: RecoveredParserResult CST.Module } 
+  , parseResults :: Object VersionedParseResult
   , clientCapabilities :: Maybe ClientCapabilities
   }
+
+type VersionedParseResult = { version :: Number, result :: RecoveredParserResult CST.Module } 
 
 derive instance newtypeServerState :: Newtype ServerState _
 

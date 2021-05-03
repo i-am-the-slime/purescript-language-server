@@ -39,7 +39,7 @@ import LanguageServer.IdePurescript.Build (collectByFirst, fullBuild, getDiagnos
 import LanguageServer.IdePurescript.ChangeContent (handleDidChangeContent)
 import LanguageServer.IdePurescript.CodeActions (getActions, onReplaceAllSuggestions, onReplaceSuggestion)
 import LanguageServer.IdePurescript.CodeLenses (getCodeLenses)
-import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, addSpagoDependencyCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, listPackageSetPackagesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, typedHoleExplicitCmd)
+import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, addSpagoDependencyCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, listPackageSetPackagesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, toggleExportManagementCmd, typedHoleExplicitCmd)
 import LanguageServer.IdePurescript.Completion (getCompletions)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.FoldingRanges (getFoldingRanges)
@@ -634,6 +634,13 @@ handleCommands configRef connection stateRef documents notify = do
         , Tuple typedHoleExplicitCmd $ voidHandler $ fillTypedHole notify
         , Tuple addSpagoDependencyCmd $ Spago.addDependency
         , Tuple listPackageSetPackagesCmd $ Spago.getPackages
+        , Tuple toggleExportManagementCmd 
+            $ simpleHandler 
+            $ modify_ (over ServerState 
+                (\s -> s { showExportManagementCodeLenses = 
+                  not s.showExportManagementCodeLenses })
+                ) stateRef
+
         ]
   onExecuteCommand connection
     $ \{ command, arguments } ->

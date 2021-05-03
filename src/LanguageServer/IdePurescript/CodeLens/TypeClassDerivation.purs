@@ -1,12 +1,4 @@
-module LanguageServer.IdePurescript.CodeLens.ExportManagement
-  ( addExportManagementCodeLenses
-  , exportManagementCodeLenses
-  , exportToName
-  , exportsToArray
-  , mkCodeLenses
-  , printExport
-  , printExports
-  ) where
+module LanguageServer.IdePurescript.CodeLens.TypeClassDerivation where
 
 import Prelude
 import Data.Array (intercalate, (:))
@@ -38,17 +30,17 @@ import PureScript.CST (RecoveredParserResult(..))
 import PureScript.CST.Traversal (defaultMonoidalVisitor, foldMapModule)
 import PureScript.CST.Types as CST
 
-exportManagementCodeLenses ∷
+typeclassDerivationCodeLenses ∷
   Object VersionedParseResult ->
   DocumentStore ->
   DocumentUri ->
   Aff (Array CodeLensResult)
-exportManagementCodeLenses parseResults documentStore uri@(DocumentUri rawUri) = do
+typeclassDerivationCodeLenses parseResults documentStore uri@(DocumentUri rawUri) = do
   doc <- (getDocument documentStore uri # liftEffect) >>= maybe (throwError (error "no such thing")) pure
   currentVersion <- getVersion doc # liftEffect
   case parseResults # Object.lookup rawUri of
     Just { result, version }
-      | version == currentVersion -> addExportManagementCodeLenses uri result
+      | version == currentVersion -> addTypeclassDerivationCodeLenses uri result
     Just _ -> mempty -- [TODO] Log error  
     Nothing -> mempty
 
@@ -60,8 +52,8 @@ exportToName = case _ of
 exportsToArray ∷ ∀ err. CST.Separated (CST.Export err) -> Array (CST.Export err)
 exportsToArray (CST.Separated { head, tail }) = head : (snd <$> tail)
 
-addExportManagementCodeLenses ∷ _ -> RecoveredParserResult CST.Module -> Aff (Array CodeLensResult)
-addExportManagementCodeLenses uri = case _ of
+addTypeclassDerivationCodeLenses ∷ DocumentUri -> RecoveredParserResult CST.Module -> Aff (Array CodeLensResult)
+addTypeclassDerivationCodeLenses uri = case _ of
   ParseSucceeded
     ( parsedModule@( CST.Module
         { header: CST.ModuleHeader { name: CST.Name { token: { range: { end: moduleNameEnd } } }
@@ -84,7 +76,6 @@ addExportManagementCodeLenses uri = case _ of
 
 printExports ∷ Array String -> String
 printExports [] = " "
-
 printExports exports = " (\n    " <> (intercalate "\n  , " (Array.sort exports)) <> "\n  )\n  where\n\n"
 
 printExport ∷ ∀ e. CST.Export e -> Maybe String

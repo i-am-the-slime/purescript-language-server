@@ -33,7 +33,7 @@ getCodeLenses stateRef documentStore _ _ { textDocument: TextDocumentIdentifier 
     Nothing -> run
   where
   run = do
-    ServerState { diagnostics, connection, showExportManagementCodeLenses } <- Ref.read stateRef # liftEffect
+    ServerState { diagnostics, showExportManagementCodeLenses, parseResults } <- Ref.read stateRef # liftEffect
     topLevelDeclarations <- topLevelDeclarationCodeLenses diagnostics uri
-    exportManagement  <- guard showExportManagementCodeLenses $ exportManagementCodeLenses connection documentStore uri
+    exportManagement  <- guard showExportManagementCodeLenses $ exportManagementCodeLenses parseResults documentStore uri
     pure $ topLevelDeclarations <> exportManagement 
