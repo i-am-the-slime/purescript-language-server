@@ -34,12 +34,14 @@ import Foreign.Object as Object
 import IdePurescript.Modules (getModulesForFileTemp, initialModulesState)
 import IdePurescript.PscIdeServer (ErrorLevel(..), Notify)
 import IdePurescript.Spago as Spago
+import IdePurescript.Typeclass as Typeclass
 import LanguageServer.IdePurescript.Assist (addClause, caseSplit, fillTypedHole, fixTypo)
 import LanguageServer.IdePurescript.Build (collectByFirst, fullBuild, getDiagnostics)
 import LanguageServer.IdePurescript.ChangeContent (handleDidChangeContent)
 import LanguageServer.IdePurescript.CodeActions (getActions, onReplaceAllSuggestions, onReplaceSuggestion)
+import LanguageServer.IdePurescript.CodeLens.TopLevelDeclarations (addTypeDefinitionCodeLenses)
 import LanguageServer.IdePurescript.CodeLenses (getCodeLenses)
-import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, addSpagoDependencyCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, listPackageSetPackagesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, toggleExportManagementCmd, typedHoleExplicitCmd)
+import LanguageServer.IdePurescript.Commands (addClauseCmd, addCompletionImportCmd, addModuleImportCmd, addSpagoDependencyCmd, addTypeclassInstanceCmd, buildCmd, caseSplitCmd, cmdName, commands, fixTypoCmd, getAvailableModulesCmd, listPackageSetPackagesCmd, organiseImportsCmd, replaceAllSuggestionsCmd, replaceSuggestionCmd, restartPscIdeCmd, searchCmd, startPscIdeCmd, stopPscIdeCmd, toggleExportManagementCmd, typedHoleExplicitCmd)
 import LanguageServer.IdePurescript.Completion (getCompletions)
 import LanguageServer.IdePurescript.Config as Config
 import LanguageServer.IdePurescript.FoldingRanges (getFoldingRanges)
@@ -634,6 +636,7 @@ handleCommands configRef connection stateRef documents notify = do
         , Tuple typedHoleExplicitCmd $ voidHandler $ fillTypedHole notify
         , Tuple addSpagoDependencyCmd $ Spago.addDependency
         , Tuple listPackageSetPackagesCmd $ Spago.getPackages
+        , Tuple addTypeclassInstanceCmd $ Typeclass.handleAddInstance
         , Tuple toggleExportManagementCmd 
             $ simpleHandler 
             $ modify_ (over ServerState 

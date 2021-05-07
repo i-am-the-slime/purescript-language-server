@@ -33,7 +33,7 @@ import LanguageServer.Protocol.DocumentStore (getDocument)
 import LanguageServer.Protocol.Handlers (CodeActionParams, applyEdit)
 import LanguageServer.Protocol.Text (makeWorkspaceEdit)
 import LanguageServer.Protocol.TextDocument (TextDocument, getTextAtRange, getVersion)
-import LanguageServer.Protocol.Types (ClientCapabilities, CodeAction(..), CodeActionKind(..), CodeActionResult, Command(..), DocumentStore, DocumentUri(DocumentUri), Position(Position), Range(Range), Settings, TextDocumentEdit(..), TextDocumentIdentifier(TextDocumentIdentifier), TextEdit(..), codeActionEmpty, codeActionResult, readRange, workspaceEdit)
+import LanguageServer.Protocol.Types (ClientCapabilities, CodeAction(..), CodeActionKind(..), CodeActionResult, Command(..), DocumentStore, DocumentUri(DocumentUri), Position(Position), Range(Range), Settings, TextDocumentEdit(..), TextDocumentIdentifier(TextDocumentIdentifier), TextEdit(..), codeActionEmpty, codeActionRefactor, codeActionResult, codeActionSourceOrganizeImports, readRange, workspaceEdit)
 import PscIde.Command (PscSuggestion(..), PursIdeInfo(..), RebuildError(..))
 
 m :: forall a. Nullable a -> Maybe a
@@ -76,7 +76,7 @@ getActions documents settings state@(ServerState { diagnostics, connection: Just
       Just $ replaceSuggestion (getTitle errorCode) docUri replacement replaceRange
     asCommand _ = Nothing
 
-    organiseImports = [ Left $ commandAction (CodeActionKind $ "source.organizeImports") (Commands.organiseImports docUri) ]
+    organiseImports = [ Left $ commandAction codeActionSourceOrganizeImports (Commands.organiseImports docUri) ]
 
     getReplacementRange (RebuildError { position: Just position, suggestion: Just (PscSuggestion { replacement, replaceRange }) }) =
       Just $ { replacement, range: range' }

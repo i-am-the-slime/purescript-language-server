@@ -6,6 +6,7 @@ module LanguageServer.IdePurescript.Commands (
   , addCompletionImportCmd
   , addModuleImportCmd
   , addSpagoDependencyCmd
+  , addTypeclassInstanceCmd
   , build
   , buildCmd
   , c
@@ -128,6 +129,9 @@ addSpagoDependencyCmd = CommandInfo "Add a spago dependency" "addSpagoDependency
 listPackageSetPackagesCmd :: CommandInfo
 listPackageSetPackagesCmd = CommandInfo "List all packages in the package set" "listPackageSetPackages"
 
+addTypeclassInstanceCmd :: CommandInfo
+addTypeclassInstanceCmd = CommandInfo "Add typeclass instances" "addTypeclassInstance"
+
 fixTypo :: DocumentUri -> Int -> Int -> Command
 fixTypo uri row char = c fixTypoCmd $ Just $ [ unsafeToForeign uri, unsafeToForeign row, unsafeToForeign char ] 
 
@@ -153,5 +157,6 @@ commands = cmdName <$>
   , addSpagoDependencyCmd
   , listPackageSetPackagesCmd
   , toggleExportManagementCmd
+  , addTypeclassInstanceCmd
   ]
 
