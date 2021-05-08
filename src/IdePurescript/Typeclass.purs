@@ -94,8 +94,6 @@ getDeclarationAtPoint pos =
         
         -- TypeConstructor (QualifiedName Proper)
 
-newtype Boris = Boris String
-
 -- -> "--"
 --   = -> ""="
 -- derive -> "derive"

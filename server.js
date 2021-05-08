@@ -23544,7 +23544,7 @@ var PS = {};
   var LanguageServer_Protocol_Window = $PS["LanguageServer.Protocol.Window"];
   var PureScript_CST = $PS["PureScript.CST"];
   var PureScript_CST_Traversal = $PS["PureScript.CST.Traversal"];
-  var PureScript_CST_Types = $PS["PureScript.CST.Types"];
+  var PureScript_CST_Types = $PS["PureScript.CST.Types"];                
   var getDeclarationAtPoint = function (pos) {
       return PureScript_CST_Traversal.foldMapModule(Data_Maybe.monoidMaybe(Data_Semigroup.semigroupRecord()(Data_Semigroup.semigroupRecordCons(new Data_Symbol.IsSymbol(function () {
           return "endCharacter";
