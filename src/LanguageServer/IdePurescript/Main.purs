@@ -636,7 +636,7 @@ handleCommands configRef connection stateRef documents notify = do
         , Tuple typedHoleExplicitCmd $ voidHandler $ fillTypedHole notify
         , Tuple addSpagoDependencyCmd $ Spago.addDependency
         , Tuple listPackageSetPackagesCmd $ Spago.getPackages
-        , Tuple addTypeclassInstanceCmd $ Typeclass.handleAddInstance
+        , Tuple addTypeclassInstanceCmd $ voidHandler Typeclass.handleAddInstance
         , Tuple toggleExportManagementCmd 
             $ simpleHandler 
             $ modify_ (over ServerState 
